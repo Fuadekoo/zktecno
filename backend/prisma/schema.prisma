@@ -1,0 +1,237 @@
+// PostgreSQL schema for the BioTime attendance dashboard.
+// Change this file, then run `npm run db:migrate:dev -- --name <what-changed>` to create a migration.
+//
+// Time convention: TIMESTAMP (without time zone) columns hold the local wall-clock time used by BioTime
+// ("2026-11-25 08:30:00"), not UTC. See src/db/time.ts for the conversion helpers.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  admin
+  viewer
+}
+
+enum SyncJob {
+  devices
+  employees
+  punches
+  /// Punches read directly from devices over TCP/UDP 4370 (zkteco-js)
+  device_punches
+}
+
+/// Where a punch came from
+enum PunchSource {
+  biotime
+  device
+}
+
+enum SyncTrigger {
+  startup
+  schedule
+  manual
+  personnel_change
+  range
+}
+
+enum RunStatus {
+  running
+  success
+  failed
+}
+
+enum DeliveryStatus {
+  pending
+  success
+  failed
+}
+
+/// People who can sign in to the dashboard.
+model User {
+  id           Int        @id @default(autoincrement())
+  username     String     @unique @db.VarChar(64)
+  fullName     String?    @map("full_name") @db.VarChar(128)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+  role         Role       @default(viewer)
+  isActive     Boolean    @default(true) @map("is_active")
+  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamp(0)
+  createdAt    DateTime   @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime   @map("updated_at") @db.Timestamp(0)
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+/// Mirror of BioTime employees. `id` is the BioTime id.
+model Employee {
+  id             Int      @id
+  empCode        String   @map("emp_code") @db.VarChar(32)
+  firstName      String?  @map("first_name") @db.VarChar(100)
+  lastName       String?  @map("last_name") @db.VarChar(100)
+  departmentId   Int?     @map("department_id")
+  departmentName String?  @map("department_name") @db.VarChar(128)
+  positionName   String?  @map("position_name") @db.VarChar(128)
+  areaNames      String?  @map("area_names") @db.VarChar(512)
+  cardNo         String?  @map("card_no") @db.VarChar(32)
+  mobile         String?  @db.VarChar(32)
+  email          String?  @db.VarChar(128)
+  gender         String?  @db.VarChar(8)
+  hireDate       String?  @map("hire_date") @db.VarChar(10)
+  enableAtt      Boolean  @default(true) @map("enable_att")
+  isDeleted      Boolean  @default(false) @map("is_deleted")
+  syncedAt       DateTime @map("synced_at") @db.Timestamp(0)
+
+  @@index([empCode])
+  @@index([departmentId])
+  @@map("employees")
+}
+
+/// Mirror of BioTime terminals. `id` is the BioTime id.
+model Device {
+  id               Int       @id
+  sn               String    @db.VarChar(64)
+  alias            String?   @db.VarChar(128)
+  ipAddress        String?   @map("ip_address") @db.VarChar(64)
+  state            Int?      @db.SmallInt
+  areaName         String?   @map("area_name") @db.VarChar(128)
+  fwVer            String?   @map("fw_ver") @db.VarChar(64)
+  lastActivity     DateTime? @map("last_activity") @db.Timestamp(0)
+  userCount        Int?      @map("user_count")
+  fpCount          Int?      @map("fp_count")
+  faceCount        Int?      @map("face_count")
+  transactionCount Int?      @map("transaction_count")
+  syncedAt         DateTime  @map("synced_at") @db.Timestamp(0)
+
+  @@index([sn])
+  @@map("devices")
+}
+
+/// Every punch. For BioTime punches `id` is the BioTime transaction id, so re-syncing never duplicates.
+/// Punches read directly from a device get negative ids, and are replaced by the BioTime row when BioTime
+/// later reports the same punch (same emp_code, punch_time and terminal_sn).
+model Punch {
+  id            Int         @id
+  source        PunchSource @default(biotime)
+  empCode       String      @map("emp_code") @db.VarChar(32)
+  punchTime     DateTime    @map("punch_time") @db.Timestamp(0)
+  punchState    String?     @map("punch_state") @db.VarChar(8)
+  verifyType    Int?        @map("verify_type") @db.SmallInt
+  workCode      String?     @map("work_code") @db.VarChar(32)
+  terminalSn    String?     @map("terminal_sn") @db.VarChar(64)
+  terminalAlias String?     @map("terminal_alias") @db.VarChar(128)
+  areaAlias     String?     @map("area_alias") @db.VarChar(128)
+  uploadTime    DateTime?   @map("upload_time") @db.Timestamp(0)
+  /// The sync run that first saved this punch
+  syncRunId     Int?        @map("sync_run_id")
+  syncedAt      DateTime    @map("synced_at") @db.Timestamp(0)
+  syncRun       SyncRun?    @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+
+  @@index([punchTime])
+  @@index([empCode, punchTime])
+  @@index([terminalSn, punchTime])
+  @@index([syncRunId])
+  @@map("punches")
+}
+
+/// One row per sync job execution: what was fetched, what was new, how long, and any error.
+model SyncRun {
+  id                Int               @id @default(autoincrement())
+  job               SyncJob
+  trigger           SyncTrigger
+  status            RunStatus         @default(running)
+  startedAt         DateTime          @map("started_at") @db.Timestamp(0)
+  finishedAt        DateTime?         @map("finished_at") @db.Timestamp(0)
+  durationMs        Int?              @map("duration_ms")
+  /// Records received from BioTime
+  fetched           Int               @default(0)
+  /// Records that were new to the database
+  created           Int               @default(0)
+  /// Existing records refreshed
+  updated           Int               @default(0)
+  /// Records removed or marked deleted
+  removed           Int               @default(0)
+  /// Time window read from BioTime (punches only)
+  rangeFrom         DateTime?         @map("range_from") @db.Timestamp(0)
+  rangeTo           DateTime?         @map("range_to") @db.Timestamp(0)
+  /// Incremental punch sync continues from here on the next run
+  cursorAt          DateTime?         @map("cursor_at") @db.Timestamp(0)
+  /// Webhook deliveries queued by this run
+  webhooksQueued    Int               @default(0) @map("webhooks_queued")
+  error             String?           @db.Text
+  punches           Punch[]
+  webhookDeliveries WebhookDelivery[]
+
+  @@index([job, status, startedAt])
+  @@index([startedAt])
+  @@map("sync_runs")
+}
+
+/// Who did what (sign-ins, edits, deletes, manual syncs, webhook changes).
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int?     @map("user_id")
+  username  String?  @db.VarChar(64)
+  action    String   @db.VarChar(32)
+  entity    String   @db.VarChar(32)
+  entityId  String?  @map("entity_id") @db.VarChar(64)
+  summary   String?  @db.VarChar(255)
+  details   Json?
+  ip        String?  @db.VarChar(64)
+  createdAt DateTime @map("created_at") @db.Timestamp(0)
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([entity, entityId])
+  @@map("audit_logs")
+}
+
+/// An outgoing webhook: new punches and sync results are POSTed to `url`.
+model Webhook {
+  id             Int               @id @default(autoincrement())
+  name           String            @db.VarChar(100)
+  url            String            @db.VarChar(2048)
+  /// HMAC-SHA256 signing secret (sent as X-Webhook-Signature)
+  secret         String            @db.VarChar(128)
+  /// Subscribed events, e.g. ["punch.created", "sync.failed"]
+  events         Json
+  isActive       Boolean           @default(true) @map("is_active")
+  lastDeliveryAt DateTime?         @map("last_delivery_at") @db.Timestamp(0)
+  lastStatus     DeliveryStatus?   @map("last_status")
+  createdAt      DateTime          @map("created_at") @db.Timestamp(0)
+  updatedAt      DateTime          @map("updated_at") @db.Timestamp(0)
+  deliveries     WebhookDelivery[]
+
+  @@map("webhooks")
+}
+
+/// Every webhook request, including retries, so nothing is lost and failures can be re-sent.
+model WebhookDelivery {
+  id             Int            @id @default(autoincrement())
+  webhookId      Int            @map("webhook_id")
+  syncRunId      Int?           @map("sync_run_id")
+  event          String         @db.VarChar(64)
+  payload        Json
+  status         DeliveryStatus @default(pending)
+  attempts       Int            @default(0)
+  nextAttemptAt  DateTime?      @map("next_attempt_at") @db.Timestamp(0)
+  responseStatus Int?           @map("response_status")
+  responseBody   String?        @map("response_body") @db.Text
+  error          String?        @db.Text
+  durationMs     Int?           @map("duration_ms")
+  createdAt      DateTime       @map("created_at") @db.Timestamp(0)
+  deliveredAt    DateTime?      @map("delivered_at") @db.Timestamp(0)
+  webhook        Webhook        @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+  syncRun        SyncRun?       @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
+
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
