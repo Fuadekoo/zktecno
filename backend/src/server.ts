@@ -6,6 +6,7 @@ import { config, warnAboutUnsafeConfig } from './config.js';
 import { connectDatabase, describeDbError, disconnectDatabase } from './db/prisma.js';
 import { syncRunsRepo } from './repositories/syncRuns.js';
 import { authService } from './services/auth.service.js';
+import { settingsService } from './services/settings.service.js';
 import { syncService } from './services/sync.service.js';
 import { webhookService } from './services/webhook.service.js';
 
@@ -17,6 +18,8 @@ async function main() {
     await connectDatabase();
     await syncRunsRepo.closeInterrupted();
     await authService.seedAdminIfEmpty();
+    // Devices, BioTime, ADMS and sync settings live in the database (Settings page)
+    await settingsService.load();
   } catch (err) {
     console.error(`[db] ${describeDbError(err)}`);
     process.exit(1);
@@ -33,7 +36,7 @@ async function main() {
         .map((i) => i!.address);
       for (const ip of ips) console.log(`[server] On your network: dashboard http://${ip}:3000  ·  API http://${ip}:${config.port}/api`);
     }
-    console.log(`[server] BioTime: ${config.biotime.baseUrl} (auth: ${config.biotime.authType}, user: ${config.biotime.username})`);
+    if (config.biotime.enabled) console.log(`[server] BioTime: ${config.biotime.baseUrl} (auth: ${config.biotime.authType}, user: ${config.biotime.username})`);
   });
   server.on('error', (err: NodeJS.ErrnoException) => {
     console.error(err.code === 'EADDRINUSE' ? `[server] Port ${config.port} is already in use. Stop the other process or change PORT.` : err);
@@ -41,19 +44,19 @@ async function main() {
   });
 
   // 3. BioTime check, background sync, webhook delivery worker
-  biotime
+  if (config.biotime.enabled) biotime
     .ping()
     .then(({ latencyMs }) => console.log(`[biotime] Connected OK (${latencyMs} ms)`))
     .catch((err: Error) => console.warn(`[biotime] Not connected yet: ${err.message}`));
   syncService.start();
   webhookService.start();
-  const admsServer = adms.start();
+  adms.start();
 
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down`);
     syncService.stop();
     webhookService.stop();
-    admsServer?.close();
+    void adms.stop();
     server.close(() => {
       void disconnectDatabase().finally(() => process.exit(0));
     });

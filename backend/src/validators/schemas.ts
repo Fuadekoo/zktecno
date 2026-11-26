@@ -125,3 +125,81 @@ export const syncRequestSchema = z
     message: 'start_date must be on or before end_date',
     path: ['end_date'],
   });
+
+// ---- Settings (stored in the database, edited on the Settings page) ----
+const intIn = (min: number, max: number, label = 'Value') =>
+  z.coerce.number().int('Whole numbers only').min(min, `${label} must be at least ${min}`).max(max, `${label} must be at most ${max}`);
+const httpUrl = z
+  .string()
+  .trim()
+  .max(512)
+  .refine((v) => /^https?:\/\/[^\s/]+/i.test(v), 'Use a full address like http://192.168.1.10:8081');
+const ipOrHost = z
+  .string()
+  .trim()
+  .max(64)
+  .regex(/^[A-Za-z0-9.\-:]+$/, 'Use an IP address like 192.168.1.201 (or a host name)');
+const blankToNull = <T extends z.ZodType>(s: T) =>
+  z.union([s, z.literal(''), z.null()]).optional().transform((v) => (v === '' || v === undefined ? null : v));
+
+export const biotimeSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    url: httpUrl,
+    username: trimmed(64).min(1, 'Username is required'),
+    /** Empty = keep the current password */
+    password: z.string().max(200),
+    auth_type: z.enum(['jwt', 'token']),
+    timeout_ms: intIn(1000, 120_000, 'Timeout'),
+  })
+  .partial();
+
+export const admsSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    port: intIn(1, 65535, 'Port'),
+    forward: z.boolean(),
+    forward_url: z.union([httpUrl, z.literal('')]),
+    forward_timeout_ms: intIn(1000, 120_000, 'Timeout'),
+    accept_any: z.boolean(),
+  })
+  .partial();
+
+export const syncSettingsSchema = z
+  .object({
+    enabled: z.boolean(),
+    interval_seconds: intIn(60, 86_400, 'Interval'),
+    employees_minutes: intIn(1, 10_080, 'Employee refresh'),
+    initial_days: intIn(1, 3650, 'First import'),
+    lookback_hours: intIn(1, 720, 'Look-back'),
+    device_timeout_ms: intIn(1000, 120_000, 'Timeout'),
+  })
+  .partial();
+
+const deviceFields = z.object({
+  name: trimmed(100).min(1, 'Give the device a name'),
+  mode: z.enum(['pull', 'push', 'both']),
+  ip: blankToNull(ipOrHost),
+  port: intIn(1, 65535, 'Port').default(4370),
+  serial_number: blankToNull(trimmed(64).regex(/^[A-Za-z0-9\-_]+$/, 'Letters, numbers, dash and underscore only')),
+  location: blankToNull(trimmed(128)),
+  timeout_ms: intIn(1000, 120_000, 'Timeout').default(10_000),
+  chunk_size: blankToNull(intIn(1024, 65_472, 'Chunk size')),
+  enabled: z.boolean().default(true),
+});
+
+const deviceRules = (d: { mode?: string; ip?: string | null; serial_number?: string | null }, ctx: z.RefinementCtx) => {
+  if ((d.mode === 'pull' || d.mode === 'both') && !d.ip) ctx.addIssue({ code: 'custom', path: ['ip'], message: 'The IP address is needed to read the device' });
+  if ((d.mode === 'push' || d.mode === 'both') && !d.serial_number)
+    ctx.addIssue({ code: 'custom', path: ['serial_number'], message: 'The serial number is needed to accept pushes (Test connection fills it in)' });
+};
+
+export const zkDeviceSchema = deviceFields.superRefine(deviceRules);
+
+/** "Test connection" before saving: only what is needed to reach the device. */
+export const zkDeviceTestSchema = z.object({
+  ip: ipOrHost.min(1, 'IP address is required'),
+  port: intIn(1, 65535, 'Port').default(4370),
+  timeout_ms: intIn(1000, 120_000, 'Timeout').default(10_000),
+  chunk_size: blankToNull(intIn(1024, 65_472, 'Chunk size')).optional(),
+});

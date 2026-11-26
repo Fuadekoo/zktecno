@@ -180,7 +180,7 @@ export function createAdmsApp() {
       return res
         .status(404)
         .type('text/plain')
-        .send(`This is the ADMS device push port (${config.adms.port}), not BioTime. Point BIOTIME_URL at the BioTime server.`);
+        .send(`This is the ADMS device push port (${config.adms.port}), not BioTime. Set the real BioTime address in Settings > BioTime.`);
     }
     const body = Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0);
     const sn = String(req.query.SN ?? req.query.sn ?? '').trim();
@@ -226,15 +226,37 @@ function pointsAtThisPort(url: string) {
   }
 }
 
+let current: Server | null = null;
+
 export const adms = {
+  listening: () => current?.listening ?? false,
+
+  /** Stop listening (resolves once the port is free). */
+  stop(): Promise<void> {
+    const s = current;
+    current = null;
+    if (!s) return Promise.resolve();
+    return new Promise((resolve) => {
+      s.close(() => resolve());
+      s.closeAllConnections?.();
+    });
+  },
+
+  /** Apply new ADMS settings: stop, then start again if enabled. */
+  async restart() {
+    await this.stop();
+    return this.start();
+  },
+
   devices: () => [...devices.values()].sort((a, b) => a.sn.localeCompare(b.sn)),
 
   start(): Server | null {
+    if (current) return current;
     if (!config.adms.enabled) return null;
     const self = pointsAtThisPort(config.biotime.baseUrl);
-    if (self) console.warn(`[adms] WARNING: BIOTIME_URL (${config.biotime.baseUrl}) is this server's ADMS push port. BioTime sync will fail: set BIOTIME_URL to the real BioTime server.`);
+    if (self) console.warn(`[adms] WARNING: The BioTime address (${config.biotime.baseUrl}) is this server's ADMS push port. BioTime sync will fail: set the real BioTime address in Settings > BioTime.`);
     if (config.adms.forward && pointsAtThisPort(config.adms.forwardUrl)) {
-      console.error(`[adms] ADMS_FORWARD_URL (${config.adms.forwardUrl}) points back at this push port, which would loop. Set it to BioTime's address. Not starting ADMS.`);
+      console.error(`[adms] The forward address (${config.adms.forwardUrl}) points back at this push port, which would loop. Set it to BioTime's address. Not starting ADMS.`);
       return null;
     }
     const server = createAdmsApp().listen(config.adms.port, config.host, () => {
@@ -244,8 +266,10 @@ export const adms = {
       );
     });
     server.on('error', (err: NodeJS.ErrnoException) => {
-      console.error(err.code === 'EADDRINUSE' ? `[adms] Port ${config.adms.port} is already in use. Change ADMS_PORT.` : err);
+      if (current === server) current = null;
+      console.error(err.code === 'EADDRINUSE' ? `[adms] Port ${config.adms.port} is already in use. Change it in Settings > ADMS.` : err);
     });
+    current = server;
     return server;
   },
 };

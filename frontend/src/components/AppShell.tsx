@@ -20,6 +20,7 @@ const NAV: { href: string; label: string; icon: IconName; adminOnly?: boolean }[
   { href: '/system', label: 'Sync & Activity', icon: 'refresh' },
   { href: '/webhooks', label: 'Webhooks', icon: 'send', adminOnly: true },
   { href: '/users', label: 'Users', icon: 'shield', adminOnly: true },
+  { href: '/settings', label: 'Settings', icon: 'settings', adminOnly: true },
 ];
 
 export default function AppShell({ children }: { children: ReactNode }) {

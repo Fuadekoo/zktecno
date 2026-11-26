@@ -83,15 +83,26 @@ if (!parsed.success) {
 }
 const env = parsed.data;
 
+/** A device the server reads over the network (pull / both). */
+export interface ZkDeviceConfig {
+  /** zk_devices.id (0 for devices that only came from .env before the first start) */
+  id: number;
+  name: string;
+  ip: string;
+  port: number;
+  timeoutMs: number;
+  chunkSize: number | null;
+}
+
 function parseZkDevices(value: string) {
-  const list: { ip: string; port: number }[] = [];
+  const list: ZkDeviceConfig[] = [];
   for (const raw of value.split(',').map((s) => s.trim()).filter(Boolean)) {
     const m = /^([^\s:]+)(?::(\d{1,5}))?$/.exec(raw);
     if (!m) {
       console.error(`[config] ZK_DEVICES: "${raw}" is not "ip" or "ip:port"`);
       process.exit(1);
     }
-    list.push({ ip: m[1]!, port: m[2] ? Number(m[2]) : 4370 });
+    list.push({ id: 0, name: m[1]!, ip: m[1]!, port: m[2] ? Number(m[2]) : 4370, timeoutMs: env.ZK_TIMEOUT_MS, chunkSize: null });
   }
   return list;
 }
@@ -149,7 +160,7 @@ export const config = {
     sessionHours: env.APP_SESSION_HOURS,
     cookieName: 'zk_session',
   },
-} as const;
+};
 
 export function warnAboutUnsafeConfig() {
   const warnings: string[] = [];

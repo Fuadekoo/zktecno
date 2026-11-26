@@ -285,3 +285,73 @@ export interface ZkDeviceStatus {
   latency_ms: number;
   error: string | null;
 }
+
+// ---- Settings page ----
+export type DeviceMode = 'pull' | 'push' | 'both';
+
+export interface DeviceSetting {
+  id: number;
+  name: string;
+  mode: DeviceMode;
+  ip: string | null;
+  port: number;
+  serial_number: string | null;
+  location: string | null;
+  timeout_ms: number;
+  chunk_size: number | null;
+  enabled: boolean;
+  model: string | null;
+  firmware: string | null;
+  last_seen_at: string | null;
+  last_push_at: string | null;
+  last_push_ip: string | null;
+}
+
+export interface BioTimeSettings {
+  enabled: boolean;
+  url: string;
+  username: string;
+  password: string;
+  password_set: boolean;
+  auth_type: 'jwt' | 'token';
+  timeout_ms: number;
+}
+
+export interface AdmsSettings {
+  enabled: boolean;
+  port: number;
+  forward: boolean;
+  forward_url: string;
+  forward_timeout_ms: number;
+  accept_any: boolean;
+}
+
+export interface SyncSettings {
+  enabled: boolean;
+  interval_seconds: number;
+  employees_minutes: number;
+  initial_days: number;
+  lookback_hours: number;
+  device_timeout_ms: number;
+}
+
+export interface AppSettings {
+  biotime: BioTimeSettings;
+  adms: AdmsSettings;
+  sync: SyncSettings;
+}
+
+export interface NetworkInfo {
+  server_ips: string[];
+  adms_port: number;
+  adms_enabled: boolean;
+  adms_listening: boolean;
+  api_port: number;
+}
+
+export interface SettingsResponse {
+  settings: AppSettings;
+  devices: DeviceSetting[];
+  network: NetworkInfo;
+  unknown_push_devices: { sn: string; ip: string | null; last_seen: string }[];
+}

@@ -66,15 +66,21 @@ class SyncService {
 
   start() {
     if (!config.sync.enabled) {
-      console.log('[sync] Disabled (SYNC_ENABLED=false). Use "Sync now" in the dashboard.');
+      console.log('[sync] Automatic sync is off (Settings > Sync). Use "Sync now" in the dashboard.');
       return;
     }
     console.log(`[sync] Every ${config.sync.intervalSeconds}s (employees every ${config.sync.employeesMinutes} min)`);
-    if (!config.biotime.enabled) console.log('[sync] BioTime off (BIOTIME_ENABLED=false): using direct device reads and ADMS push only');
-    if (zk.enabled()) console.log(`[sync] Also reading ${zk.devices().length} device(s) directly: ${zk.devices().map((d) => `${d.ip}:${d.port}`).join(', ')}`);
+    if (!config.biotime.enabled) console.log('[sync] BioTime off: using direct device reads and ADMS push only');
+    if (zk.enabled()) console.log(`[sync] Also reading ${zk.devices().length} device(s) directly: ${zk.devices().map((d) => `${d.name} (${d.ip}:${d.port})`).join(', ')}`);
     setTimeout(() => void this.runCycle({ trigger: 'startup' }), 1500).unref();
     this.timer = setInterval(() => void this.runCycle({ trigger: 'schedule' }), config.sync.intervalSeconds * 1000);
     this.timer.unref();
+  }
+
+  /** Apply new sync settings: restart the timer (and run a cycle now if enabled). */
+  restart() {
+    this.stop();
+    this.start();
   }
 
   stop() {
@@ -181,13 +187,13 @@ class SyncService {
   }
 
   /**
-   * Without BioTime: the employee list is the users enrolled on the devices in ZK_DEVICES.
+   * Without BioTime: the employee list is the users enrolled on the Pull/Both devices in Settings.
    * A user on several devices is saved once. Users missing from every device are marked deleted,
    * but only when all devices were read, so one offline device doesn't wipe its users.
    */
   private syncEmployeesFromDevices(trigger: SyncTrigger) {
     return this.runJob('employees', trigger, async () => {
-      if (!zk.enabled()) throw new Error('BioTime is off and no devices are configured. Set ZK_DEVICES in backend/.env.');
+      if (!zk.enabled()) throw new Error('BioTime is off and no devices are set up for reading. Add one in Settings > Devices (mode Pull or Both).');
       const syncedAt = dbNow();
       const byCode = new Map<string, ZkUser>();
       const failures: string[] = [];
@@ -213,9 +219,9 @@ class SyncService {
   }
 
   /**
-   * Incremental punch sync. Reads from the last successful run minus SYNC_LOOKBACK_HOURS,
+   * Incremental punch sync. Reads from the last successful run minus the look-back hours,
    * so punches that offline devices upload late are still caught. The very first run imports
-   * SYNC_INITIAL_DAYS of history and does not fire webhooks (it's history, not news).
+   * the first-import days of history and does not fire webhooks (it's history, not news).
    */
   syncPunches(trigger: SyncTrigger = 'manual') {
     return this.runJob('punches', trigger, async (runId) => {
@@ -225,7 +231,7 @@ class SyncService {
       let from: Date;
       if (initialImport) {
         from = new Date(`${localDate(new Date(now.getTime() - (config.sync.initialDays - 1) * DAY))}T00:00:00`);
-        console.log(`[sync] First punch sync: importing from ${localDate(from)} (SYNC_INITIAL_DAYS=${config.sync.initialDays})`);
+        console.log(`[sync] First punch sync: importing from ${localDate(from)} (first-import days: ${config.sync.initialDays})`);
       } else {
         // cursor holds wall-clock time; convert back to a real instant for the window maths.
         from = new Date(new Date(fromDb(cursor).replace(' ', 'T')).getTime() - config.sync.lookbackHours * HOUR);
@@ -270,14 +276,14 @@ class SyncService {
   }
 
   /**
-   * Read punches straight from each device in ZK_DEVICES (zkteco-js), alongside BioTime.
-   * Devices return their whole log, so only records from the cursor minus SYNC_LOOKBACK_HOURS are kept
-   * (SYNC_INITIAL_DAYS on the first run, which fires no webhooks). One unreachable device doesn't stop the
+   * Read punches straight from each Pull/Both device in Settings (zkteco-js), alongside BioTime.
+   * Devices return their whole log, so only records from the cursor minus the look-back hours are kept
+   * (the first-import days on the first run, which fires no webhooks). One unreachable device doesn't stop the
    * others; the run only fails if every device failed.
    */
   syncDevicePunches(trigger: SyncTrigger = 'manual', range?: { startDate: string; endDate: string }) {
     return this.runJob('device_punches', range ? 'range' : trigger, async (runId) => {
-      if (!zk.enabled()) throw new Error('No devices configured. Set ZK_DEVICES in backend/.env.');
+      if (!zk.enabled()) throw new Error('No devices are set up for reading. Add one in Settings > Devices (mode Pull or Both).');
       const now = new Date();
       const cursor = range ? null : await syncRunsRepo.punchCursor('device_punches');
       const initialImport = !range && !cursor;

@@ -3,12 +3,15 @@
  * Used alongside BioTime: the device keeps pushing to BioTime over ADMS while we read its log here.
  */
 import Zkteco from 'zkteco-js';
-import { config } from '../config.js';
+import { config, type ZkDeviceConfig } from '../config.js';
 import { localDateTime } from '../utils/http.js';
 
+/** Enough to reach a device; per-device timeout and chunk size are optional. */
 export interface ZkDeviceAddress {
   ip: string;
   port: number;
+  timeoutMs?: number;
+  chunkSize?: number | null;
 }
 
 /** A punch as read from a device, in the same shape the rest of the app uses. */
@@ -86,13 +89,16 @@ async function optional<T>(fn: () => Promise<T>): Promise<T | null> {
 
 const clean = (s: string | null | undefined) => (s ? s.replace(/\0/g, '').trim() || null : null);
 
+const timeoutOf = (d: ZkDeviceAddress) => Math.max(1000, d.timeoutMs ?? config.zk.timeoutMs);
+
 /** Connect, run `fn`, always disconnect. Each call opens its own connection. */
 async function withDevice<T>(d: ZkDeviceAddress, fn: (dev: Zkteco) => Promise<T>, deadlineMs: number): Promise<T> {
-  const dev = new Zkteco(d.ip, d.port, config.zk.timeoutMs);
+  const timeoutMs = timeoutOf(d);
+  const dev = new Zkteco(d.ip, d.port, timeoutMs, undefined, d.chunkSize ?? undefined);
   const label = `${d.ip}:${d.port}`;
   try {
     // The library's socket timeout doesn't abort a hanging connect, so enforce our own.
-    await withDeadline(dev.createSocket(), config.zk.timeoutMs, `Connecting to ${label}`);
+    await withDeadline(dev.createSocket(), timeoutMs, `Connecting to ${label}`);
     return await withDeadline(fn(dev), deadlineMs, `Reading ${label}`);
   } catch (err) {
     throw new Error(`${label}: ${err instanceof Error ? err.message : zkErrorMessage(err)}`);
@@ -102,7 +108,7 @@ async function withDevice<T>(d: ZkDeviceAddress, fn: (dev: Zkteco) => Promise<T>
 }
 
 export const zk = {
-  devices: (): ZkDeviceAddress[] => config.zk.devices,
+  devices: (): ZkDeviceConfig[] => config.zk.devices,
   enabled: () => config.zk.devices.length > 0,
 
   /**
@@ -130,7 +136,7 @@ export const zk = {
         }
         return { serial, punches };
       },
-      Math.max(120_000, config.zk.timeoutMs * 12),
+      Math.max(120_000, timeoutOf(d) * 12),
     );
   },
 
@@ -148,7 +154,7 @@ export const zk = {
         }
         return users;
       },
-      Math.max(60_000, config.zk.timeoutMs * 6),
+      Math.max(60_000, timeoutOf(d) * 6),
     );
   },
 
@@ -177,7 +183,7 @@ export const zk = {
             error: null,
           };
         },
-        config.zk.timeoutMs * 3,
+        timeoutOf(d) * 3,
       );
     } catch (err) {
       return { ...base, online: false, connection: null, latency_ms: Date.now() - started, error: (err as Error).message };

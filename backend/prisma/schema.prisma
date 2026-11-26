@@ -78,7 +78,10 @@ model Employee {
   lastName       String?  @map("last_name") @db.VarChar(100)
   departmentId   Int?     @map("department_id")
   departmentName String?  @map("department_name") @db.VarChar(128)
+  positionId     Int?     @map("position_id")
   positionName   String?  @map("position_name") @db.VarChar(128)
+  /// Area ids (JSON array), set when areas are managed here instead of BioTime
+  areaIds        Json?    @map("area_ids")
   areaNames      String?  @map("area_names") @db.VarChar(512)
   cardNo         String?  @map("card_no") @db.VarChar(32)
   mobile         String?  @db.VarChar(32)
@@ -234,4 +237,70 @@ model WebhookDelivery {
   @@index([status, nextAttemptAt])
   @@index([webhookId, createdAt])
   @@map("webhook_deliveries")
+}
+
+/// How the server talks to a device.
+enum DeviceMode {
+  /// The server connects to the device over the network (TCP, falling back to UDP, port 4370)
+  pull
+  /// The device sends punches to this server (ADMS / "Cloud Server Setting")
+  push
+  /// Both: pushes arrive live and the server also reads the device to catch anything missed
+  both
+}
+
+/// Attendance devices, managed on the Settings page.
+model ZkDevice {
+  id           Int        @id @default(autoincrement())
+  name         String     @db.VarChar(100)
+  mode         DeviceMode @default(pull)
+  /// Needed for pull / both
+  ip           String?    @db.VarChar(64)
+  port         Int        @default(4370)
+  /// Needed for push / both: pushes are matched by serial number
+  serialNumber String?    @unique @map("serial_number") @db.VarChar(64)
+  location     String?    @db.VarChar(128)
+  /// Network timeout for this device
+  timeoutMs    Int        @default(10000) @map("timeout_ms")
+  /// Bytes per download chunk. Lower (e.g. 8184) for slow or remote links; null = library default
+  chunkSize    Int?       @map("chunk_size")
+  enabled      Boolean    @default(true)
+  /// Filled in by "Test connection"
+  model        String?    @db.VarChar(100)
+  firmware     String?    @db.VarChar(100)
+  lastSeenAt   DateTime?  @map("last_seen_at") @db.Timestamp(0)
+  createdAt    DateTime   @map("created_at") @db.Timestamp(0)
+  updatedAt    DateTime   @map("updated_at") @db.Timestamp(0)
+
+  @@map("zk_devices")
+}
+
+/// Settings edited on the Settings page (BioTime, ADMS, sync). One row per key; values are JSON.
+model AppSetting {
+  key       String   @id @db.VarChar(64)
+  value     Json
+  updatedAt DateTime @map("updated_at") @db.Timestamp(0)
+
+  @@map("app_settings")
+}
+
+enum OrgUnitKind {
+  department
+  area
+  position
+}
+
+/// Departments, areas and positions managed in this dashboard (used when BioTime is off).
+model OrgUnit {
+  id        Int         @id @default(autoincrement())
+  kind      OrgUnitKind
+  code      String      @db.VarChar(50)
+  name      String      @db.VarChar(100)
+  parentId  Int?        @map("parent_id")
+  createdAt DateTime    @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime    @map("updated_at") @db.Timestamp(0)
+
+  @@unique([kind, code])
+  @@index([kind])
+  @@map("org_units")
 }

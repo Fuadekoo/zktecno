@@ -9,6 +9,7 @@ import {
   employeesRoutes,
   positionsRoutes,
 } from './personnel.routes.js';
+import { settingsRoutes } from './settings.routes.js';
 import { systemRoutes } from './system.routes.js';
 import { usersRoutes } from './users.routes.js';
 import { webhooksRoutes } from './webhooks.routes.js';
@@ -25,6 +26,7 @@ import { webhooksRoutes } from './webhooks.routes.js';
  *   /devices                device list                 (BioTime live)
  *   /system                 sync status, sync history, manual sync, audit log
  *   /webhooks               outgoing webhooks + delivery log (PostgreSQL, admin)
+ *   /settings               devices, BioTime, ADMS, sync (PostgreSQL, admin)
  *   /users                  dashboard accounts          (PostgreSQL, admin)
  */
 export function apiRoutes() {
@@ -41,6 +43,7 @@ export function apiRoutes() {
     .use('/positions', positionsRoutes)
     .use('/devices', devicesRoutes)
     .use('/system', systemRoutes)
+    .use('/settings', settingsRoutes)
     .use('/users', usersRoutes)
     .use('/webhooks', webhooksRoutes);
 }

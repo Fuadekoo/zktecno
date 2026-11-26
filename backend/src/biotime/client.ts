@@ -65,6 +65,8 @@ interface RequestOptions {
 }
 
 export interface BioTimeOptions {
+  /** false = every request fails with "BioTime is turned off" */
+  enabled?: boolean;
   baseUrl: string;
   username: string;
   password: string;
@@ -77,6 +79,12 @@ export class BioTimeClient {
   private tokenPromise: Promise<string> | null = null;
 
   constructor(private readonly opts: BioTimeOptions) {}
+
+  /** Forget the login token (after the server address or credentials change). */
+  resetToken() {
+    this.token = null;
+    this.tokenPromise = null;
+  }
 
   get baseUrl() {
     return this.opts.baseUrl;
@@ -96,7 +104,7 @@ export class BioTimeClient {
   }
 
   private async rawRequest<T>(method: string, path: string, { query, body, auth = true }: RequestOptions = {}): Promise<T> {
-    if (!config.biotime.enabled) throw new BioTimeError('BioTime is turned off (BIOTIME_ENABLED=false in backend/.env).', 503);
+    if (this.opts.enabled === false) throw new BioTimeError('BioTime is turned off. Turn it on in Settings > BioTime.', 503);
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
     if (auth) headers.Authorization = this.authHeader;
 
@@ -113,7 +121,7 @@ export class BioTimeClient {
       throw new BioTimeError(
         timedOut
           ? `BioTime server at ${this.opts.baseUrl} did not respond within ${this.opts.timeoutMs / 1000}s`
-          : `Cannot reach BioTime server at ${this.opts.baseUrl}. Check BIOTIME_URL and that BioTime is running.`,
+          : `Cannot reach BioTime server at ${this.opts.baseUrl}. Check the BioTime address in Settings and that BioTime is running.`,
         503,
       );
     }
