@@ -3,9 +3,9 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -H 0.0.0.0 -p 3000",
+    "dev": "node scripts/next.mjs dev",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3000",
+    "start": "node scripts/next.mjs start",
     "build:desktop": "node -e \"process.env.DESKTOP_BUILD='1'; require('child_process').execSync('next build', { stdio: 'inherit', env: process.env })\""
   },
   "dependencies": {

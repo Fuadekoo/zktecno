@@ -40,7 +40,9 @@ async function main() {
         .flat()
         .filter((i) => i && i.family === 'IPv4' && !i.internal)
         .map((i) => i!.address);
-      const dashPort = config.desktop.staticDir ? config.port : 3000;
+      // The dashboard port: the API itself in desktop mode, else the port in CORS_ORIGIN (the frontend address)
+      const corsPort = (() => { try { return new URL(config.corsOrigin[0] ?? "").port; } catch { return ""; } })();
+      const dashPort = config.desktop.staticDir ? config.port : Number(corsPort) || 3000;
       for (const ip of ips) console.log(`[server] On your network: dashboard http://${ip}:${dashPort}  ·  API http://${ip}:${config.port}/api`);
     }
     if (config.biotime.enabled) console.log(`[server] BioTime: ${config.biotime.baseUrl} (auth: ${config.biotime.authType}, user: ${config.biotime.username})`);
