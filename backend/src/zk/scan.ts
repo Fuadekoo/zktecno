@@ -123,8 +123,8 @@ async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
 export interface ScanEvents {
   /** Scan started: which networks, how many addresses */
   onStart?: (info: { networks: string[]; total: number }) => void;
-  /** Addresses checked so far */
-  onProgress?: (done: number, total: number) => void;
+  /** Addresses checked so far, and the last one checked */
+  onProgress?: (done: number, total: number, ip: string) => void;
   /** A device was found (sent as soon as its details are read) */
   onDevice?: (device: FoundDevice) => void;
   /** Stop early (e.g. the person pressed Pause or closed the window) */
@@ -181,9 +181,9 @@ export async function scanNetwork(events: ScanEvents = {}, timeoutMs = 700): Pro
 
   // 1. TCP on every address, then UDP on the ones that didn't take TCP (older devices)
   let done = 0;
-  const tick = () => {
+  const tick = (ip: string) => {
     done++;
-    if (done % 16 === 0 || done === targets.length * 2) events.onProgress?.(Math.min(done, targets.length * 2), targets.length * 2);
+    if (done % 8 === 0 || done === targets.length * 2) events.onProgress?.(Math.min(done, targets.length * 2), targets.length * 2, ip);
   };
   const tcpHits = new Set<string>();
   await pool(targets, 128, async (ip) => {
@@ -192,12 +192,12 @@ export async function scanNetwork(events: ScanEvents = {}, timeoutMs = 700): Pro
       tcpHits.add(ip);
       found(ip, 'tcp');
     }
-    tick();
+    tick(ip);
   });
   await pool(targets, 64, async (ip) => {
     if (stopped()) return;
     if (!tcpHits.has(ip) && (await probeUdp(ip, timeoutMs))) found(ip, 'udp');
-    tick();
+    tick(ip);
   });
   await details;
 
