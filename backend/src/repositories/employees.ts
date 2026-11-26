@@ -1,6 +1,7 @@
 import type { BtEmployee } from '../biotime/types.js';
 import { prisma } from '../db/prisma.js';
-import type { Employee } from '../generated/prisma/client.js';
+import type { Employee, Prisma } from '../generated/prisma/client.js';
+import type { ZkUser } from '../zk/client.js';
 
 export type { Employee };
 
@@ -37,6 +38,28 @@ function fromBioTime(e: BtEmployee, syncedAt: Date) {
   };
 }
 
+/** A database row in the BioTime employee shape the frontend reads. */
+function toApiShape(e: Employee) {
+  return {
+    id: e.id,
+    emp_code: e.empCode,
+    first_name: e.firstName,
+    last_name: e.lastName,
+    department: e.departmentId,
+    dept_name: e.departmentName,
+    position: null,
+    position_name: e.positionName,
+    area: [],
+    area_name: e.areaNames,
+    card_no: e.cardNo,
+    mobile: e.mobile,
+    email: e.email,
+    gender: e.gender,
+    hire_date: e.hireDate,
+    enable_att: e.enableAtt,
+  };
+}
+
 export const employeesRepo = {
   /** Insert or update BioTime employees. Returns how many were new vs refreshed. */
   async upsertMany(list: BtEmployee[], syncedAt: Date) {
@@ -54,6 +77,59 @@ export const employeesRepo = {
     }
     const created = list.filter((e) => !existing.has(e.id)).length;
     return { created, updated: list.length - created };
+  },
+
+  /**
+   * Insert or update users read from the devices (no BioTime). Matched by emp_code; new ones get
+   * negative ids so they can never collide with BioTime ids. Name and card come from the device;
+   * other fields are left as they are.
+   */
+  async upsertFromDevice(list: ZkUser[], syncedAt: Date) {
+    const existing = new Map(
+      (await prisma.employee.findMany({ select: { id: true, empCode: true }, where: { empCode: { in: list.map((u) => u.emp_code) } } })).map(
+        (e) => [e.empCode, e.id],
+      ),
+    );
+    let nextId = Math.min(0, (await prisma.employee.aggregate({ _min: { id: true } }))._min.id ?? 0) - 1;
+    let created = 0;
+    for (let i = 0; i < list.length; i += 200) {
+      const chunk = list.slice(i, i + 200);
+      await prisma.$transaction(
+        chunk.map((u) => {
+          const data = {
+            empCode: u.emp_code.slice(0, 32),
+            firstName: trunc(u.name, 100),
+            cardNo: trunc(u.card_no, 32),
+            isDeleted: false,
+            syncedAt,
+          };
+          const id = existing.get(u.emp_code);
+          if (id !== undefined) return prisma.employee.update({ where: { id }, data });
+          created++;
+          return prisma.employee.create({ data: { id: nextId--, ...data } });
+        }),
+      );
+    }
+    return { created, updated: list.length - created };
+  },
+
+  /** One page of employees from the database, in the same shape the BioTime API returns. */
+  async listLocal(filters: Record<string, string>, page: number, pageSize: number) {
+    const where: Prisma.EmployeeWhereInput = { isDeleted: false };
+    if (filters.emp_code) where.empCode = { contains: filters.emp_code, mode: 'insensitive' };
+    if (filters.first_name) where.firstName = { contains: filters.first_name, mode: 'insensitive' };
+    if (filters.last_name) where.lastName = { contains: filters.last_name, mode: 'insensitive' };
+    if (filters.department && Number.isInteger(Number(filters.department))) where.departmentId = Number(filters.department);
+    const [count, rows] = await Promise.all([
+      prisma.employee.count({ where }),
+      prisma.employee.findMany({ where, orderBy: { empCode: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
+    ]);
+    return { count, hasNext: page * pageSize < count, hasPrevious: page > 1, data: rows.map(toApiShape) };
+  },
+
+  async getLocal(id: number) {
+    const e = await prisma.employee.findFirst({ where: { id, isDeleted: false } });
+    return e ? toApiShape(e) : null;
   },
 
   /** Employees not seen in the latest full sync no longer exist in BioTime. */

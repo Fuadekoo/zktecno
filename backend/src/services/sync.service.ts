@@ -9,7 +9,7 @@ import { punchesRepo } from '../repositories/punches.js';
 import { syncRunsRepo, type SyncJob, type SyncTrigger } from '../repositories/syncRuns.js';
 import { webhooksRepo } from '../repositories/webhooks.js';
 import { localDate, localDateTime } from '../utils/http.js';
-import { zk } from '../zk/client.js';
+import { zk, type ZkUser } from '../zk/client.js';
 import { webhookService } from './webhook.service.js';
 
 const HOUR = 3_600_000;
@@ -70,6 +70,7 @@ class SyncService {
       return;
     }
     console.log(`[sync] Every ${config.sync.intervalSeconds}s (employees every ${config.sync.employeesMinutes} min)`);
+    if (!config.biotime.enabled) console.log('[sync] BioTime off (BIOTIME_ENABLED=false): using direct device reads and ADMS push only');
     if (zk.enabled()) console.log(`[sync] Also reading ${zk.devices().length} device(s) directly: ${zk.devices().map((d) => `${d.ip}:${d.port}`).join(', ')}`);
     setTimeout(() => void this.runCycle({ trigger: 'startup' }), 1500).unref();
     this.timer = setInterval(() => void this.runCycle({ trigger: 'schedule' }), config.sync.intervalSeconds * 1000);
@@ -91,10 +92,15 @@ class SyncService {
     if (this.cycle) return this.cycle;
     this.cycle = (async () => {
       const results: JobResult[] = [];
-      results.push(await this.syncDevices(trigger));
-      const employeesDue = Date.now() - this.lastEmployeeSyncAt >= config.sync.employeesMinutes * 60_000;
-      if (forceEmployees || employeesDue) results.push(await this.syncEmployees(trigger));
-      results.push(await this.syncPunches(trigger));
+      if (config.biotime.enabled) {
+        results.push(await this.syncDevices(trigger));
+        const employeesDue = Date.now() - this.lastEmployeeSyncAt >= config.sync.employeesMinutes * 60_000;
+        if (forceEmployees || employeesDue) results.push(await this.syncEmployees(trigger));
+        results.push(await this.syncPunches(trigger));
+      } else if (zk.enabled()) {
+        const employeesDue = Date.now() - this.lastEmployeeSyncAt >= config.sync.employeesMinutes * 60_000;
+        if (forceEmployees || employeesDue) results.push(await this.syncEmployees(trigger));
+      }
       if (zk.enabled()) results.push(await this.syncDevicePunches(trigger));
       for (const r of results) if (!r.ok) console.warn(`[sync] ${r.job} failed: ${r.error}`);
       await this.pruneIfDue();
@@ -107,6 +113,7 @@ class SyncService {
 
   /** After employee/department changes: refresh the mirror shortly, coalescing bursts of edits. */
   requestEmployeeSync() {
+    if (!config.biotime.enabled) return;
     if (this.employeeSyncTimer) clearTimeout(this.employeeSyncTimer);
     this.employeeSyncTimer = setTimeout(() => {
       this.employeeSyncTimer = null;
@@ -162,6 +169,7 @@ class SyncService {
   }
 
   syncEmployees(trigger: SyncTrigger = 'manual') {
+    if (!config.biotime.enabled) return this.syncEmployeesFromDevices(trigger);
     return this.runJob('employees', trigger, async () => {
       const syncedAt = dbNow();
       const list = await biotime.listAll<BtEmployee>(ENDPOINTS.employees);
@@ -169,6 +177,38 @@ class SyncService {
       const removed = await employeesRepo.markMissingAsDeleted(syncedAt);
       this.lastEmployeeSyncAt = Date.now();
       return { fetched: list.length, ...r, removed };
+    });
+  }
+
+  /**
+   * Without BioTime: the employee list is the users enrolled on the devices in ZK_DEVICES.
+   * A user on several devices is saved once. Users missing from every device are marked deleted,
+   * but only when all devices were read, so one offline device doesn't wipe its users.
+   */
+  private syncEmployeesFromDevices(trigger: SyncTrigger) {
+    return this.runJob('employees', trigger, async () => {
+      if (!zk.enabled()) throw new Error('BioTime is off and no devices are configured. Set ZK_DEVICES in backend/.env.');
+      const syncedAt = dbNow();
+      const byCode = new Map<string, ZkUser>();
+      const failures: string[] = [];
+      for (const device of zk.devices()) {
+        try {
+          const users = await zk.readUsers(device);
+          for (const u of users) {
+            const seen = byCode.get(u.emp_code);
+            byCode.set(u.emp_code, { emp_code: u.emp_code, name: seen?.name || u.name, card_no: seen?.card_no || u.card_no });
+          }
+          console.log(`[sync] Device ${device.ip}: ${users.length} users`);
+        } catch (err) {
+          failures.push((err as Error).message);
+        }
+      }
+      if (failures.length === zk.devices().length) throw new Error(failures.join('; '));
+      const list = [...byCode.values()];
+      const r = await employeesRepo.upsertFromDevice(list, syncedAt);
+      const removed = failures.length ? 0 : await employeesRepo.markMissingAsDeleted(syncedAt);
+      this.lastEmployeeSyncAt = Date.now();
+      return { fetched: list.length, ...r, removed, error: failures.length ? `Some devices failed: ${failures.join('; ')}` : null };
     });
   }
 

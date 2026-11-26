@@ -28,6 +28,8 @@ const EnvSchema = z.object({
   HOST: z.string().default('0.0.0.0'),
   CORS_ORIGIN: z.string().default('http://localhost:3000'),
 
+  // false = no BioTime server: sync uses only ZK_DEVICES and ADMS push
+  BIOTIME_ENABLED: bool(true),
   BIOTIME_URL: z.string().url().default('http://127.0.0.1:8090'),
   BIOTIME_USERNAME: z.string().default('admin'),
   BIOTIME_PASSWORD: z.string().default('admin'),
@@ -101,6 +103,7 @@ export const config = {
   corsOrigin: env.CORS_ORIGIN.split(',').map((s) => s.trim()).filter(Boolean),
 
   biotime: {
+    enabled: env.BIOTIME_ENABLED,
     baseUrl: env.BIOTIME_URL.replace(/\/+$/, ''),
     username: env.BIOTIME_USERNAME,
     password: env.BIOTIME_PASSWORD,

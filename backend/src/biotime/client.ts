@@ -96,6 +96,7 @@ export class BioTimeClient {
   }
 
   private async rawRequest<T>(method: string, path: string, { query, body, auth = true }: RequestOptions = {}): Promise<T> {
+    if (!config.biotime.enabled) throw new BioTimeError('BioTime is turned off (BIOTIME_ENABLED=false in backend/.env).', 503);
     const headers: Record<string, string> = { 'Content-Type': 'application/json', Accept: 'application/json' };
     if (auth) headers.Authorization = this.authHeader;
 

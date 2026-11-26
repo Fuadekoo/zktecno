@@ -24,6 +24,7 @@ export const employeesController = biotimeResourceController({
     if (action === 'delete') await employeesRepo.markDeleted(id);
     refreshEmployees();
   },
+  local: { list: employeesRepo.listLocal, get: employeesRepo.getLocal },
 });
 
 export const departmentsController = biotimeResourceController({

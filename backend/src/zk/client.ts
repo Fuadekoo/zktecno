@@ -22,6 +22,13 @@ export interface ZkPunch {
   work_code?: string | null;
 }
 
+/** A user enrolled on a device. */
+export interface ZkUser {
+  emp_code: string;
+  name: string | null;
+  card_no: string | null;
+}
+
 export interface ZkDeviceStatus {
   ip: string;
   port: number;
@@ -124,6 +131,24 @@ export const zk = {
         return { serial, punches };
       },
       Math.max(120_000, config.zk.timeoutMs * 12),
+    );
+  },
+
+  /** The users enrolled on one device (user ID, name, card number). */
+  readUsers(d: ZkDeviceAddress) {
+    return withDevice(
+      d,
+      async (dev) => {
+        const { data } = await dev.getUsers();
+        const users: ZkUser[] = [];
+        for (const u of data ?? []) {
+          const code = clean(u.userId);
+          if (!code) continue;
+          users.push({ emp_code: code, name: clean(u.name), card_no: u.cardno ? String(u.cardno) : null });
+        }
+        return users;
+      },
+      Math.max(60_000, config.zk.timeoutMs * 6),
     );
   },
 
