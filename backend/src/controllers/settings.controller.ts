@@ -121,7 +121,7 @@ export const settingsController = {
       const result = await scanNetwork({
         signal: abort.signal,
         onStart: (info) => send({ type: 'start', ...info }),
-        onProgress: (done, total) => send({ type: 'progress', done, total }),
+        onProgress: (done, total, ip) => send({ type: 'progress', done, total, ip }),
         onDevice: (d) => send({ type: 'device', device: mark(d) }),
       });
       send({ type: 'done', scanned: result.scanned, ms: result.ms, count: result.devices.length, stopped: abort.signal.aborted });
