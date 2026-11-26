@@ -614,8 +614,9 @@ function SectionForm({
     setFields({});
     setFormError(null);
     try {
-      const body = { ...form };
-      if (section === 'biotime') delete body.password_set;
+      // Send only what was changed here, so a page left open with old values can't undo someone else's change
+      const saved = toForm(settings[section]);
+      const body = Object.fromEntries(Object.entries(form).filter(([k, v]) => k !== 'password_set' && v !== saved[k]));
       const r = await api<{ settings: AppSettings; network: NetworkInfo; changed: string[] }>(`/settings/${section}`, { method: 'PUT', body });
       onSaved(r.settings, r.network);
       setForm(toForm(r.settings[section]));
