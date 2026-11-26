@@ -8,7 +8,7 @@
  * Connection settings (PostgreSQL, port) live in <userData>/config.json; the database password is
  * encrypted with the OS key store (safeStorage). Everything else is set on the dashboard's Settings page.
  */
-const { app, BrowserWindow, Menu, dialog, ipcMain, safeStorage, shell } = require('electron');
+const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, safeStorage, shell } = require('electron');
 const { fork } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -27,6 +27,10 @@ const USER_DIR = app.getPath('userData');
 const CONFIG_FILE = path.join(USER_DIR, 'config.json');
 const LOG_DIR = path.join(USER_DIR, 'logs');
 const LOG_FILE = path.join(LOG_DIR, 'server.log');
+const TRAY_ICON = path.join(__dirname, 'assets', 'tray.png');
+
+/** Started by Windows at sign-in: run in the tray without opening a window. */
+const START_HIDDEN = process.argv.includes('--hidden');
 
 // ---------------------------------------------------------------- config
 
@@ -63,9 +67,29 @@ function loadConfig() {
   }
 }
 
+function readRaw() {
+  try {
+    return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+  } catch {
+    return {};
+  }
+}
+
+/** Small preferences (start with Windows, tray hint shown), kept next to the connection settings. */
+function getUi() {
+  return { autoStart: null, trayHintShown: false, ...(readRaw().ui || {}) };
+}
+function setUi(patch) {
+  const raw = readRaw();
+  raw.ui = { ...getUi(), ...patch };
+  fs.mkdirSync(USER_DIR, { recursive: true });
+  fs.writeFileSync(CONFIG_FILE, JSON.stringify(raw, null, 2));
+}
+
 function saveConfig(cfg) {
   fs.mkdirSync(USER_DIR, { recursive: true });
   const out = {
+    ui: readRaw().ui,
     db: { ...cfg.db, password: encrypt(cfg.db.password) },
     port: cfg.port,
     jwtSecret: encrypt(cfg.jwtSecret || crypto.randomBytes(48).toString('hex')),
@@ -280,13 +304,18 @@ function waitForHealth(port, timeoutMs = 15_000) {
 // ---------------------------------------------------------------- windows
 
 let mainWin = null;
+let tray = null;
+/** Window shown at least once (false while running hidden after a Windows sign-in start). */
+let shownOnce = false;
 let setupWin = null;
 let setupState = { error: null };
 
-const ICON = undefined; // electron-builder embeds the app icon; Electron's default is used otherwise
+const ICON = fs.existsSync(TRAY_ICON) ? nativeImage.createFromPath(TRAY_ICON) : undefined;
 
 function showLoading() {
   if (!mainWin) createMainWindow();
+  if (START_HIDDEN && !shownOnce) return;
+  showWindow();
   mainWin.loadURL(
     'data:text/html;charset=utf-8,' +
       encodeURIComponent(`<!doctype html><html><body style="margin:0;height:100vh;display:flex;align-items:center;justify-content:center;font-family:Segoe UI,system-ui,sans-serif;background:#f8fafc;color:#334155">
@@ -308,7 +337,16 @@ function createMainWindow() {
     backgroundColor: '#f8fafc',
     webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
-  mainWin.once('ready-to-show', () => mainWin.show());
+  // Closing the window keeps the server running in the tray (devices keep sending punches)
+  mainWin.on('close', (e) => {
+    if (quitting) return;
+    e.preventDefault();
+    mainWin.hide();
+    if (!getUi().trayHintShown && tray) {
+      tray.displayBalloon({ title: 'ZK Attendance is still running', content: 'It keeps receiving punches in the background. Right-click the tray icon to open or quit.', iconType: 'info' });
+      setUi({ trayHintShown: true });
+    }
+  });
   // Links to other sites open in the normal browser
   mainWin.webContents.setWindowOpenHandler(({ url }) => {
     if (!url.startsWith(`http://127.0.0.1:${serverPort}`) && !url.startsWith(`http://localhost:${serverPort}`)) shell.openExternal(url);
@@ -367,8 +405,10 @@ async function boot() {
     if (setupWin) setupWin.destroy();
     if (!mainWin) createMainWindow();
     await mainWin.loadURL(`http://localhost:${port}/`);
-    mainWin.show();
+    if (!START_HIDDEN || shownOnce) showWindow();
     buildMenu();
+    buildTray();
+    enableAutoStartOnce();
   } catch (err) {
     writeLog(`[desktop] Startup failed: ${err.message}`);
     if (mainWin) mainWin.hide();
@@ -381,7 +421,18 @@ async function restart() {
   await boot();
 }
 
+/** Recent crash times: up to 3 in 10 minutes are restarted silently, more than that asks the user. */
+const crashes = [];
 async function onServerCrash() {
+  const now = Date.now();
+  while (crashes.length && now - crashes[0] > 10 * 60_000) crashes.shift();
+  crashes.push(now);
+  if (crashes.length <= 3) {
+    writeLog(`[desktop] Restarting the server automatically (${crashes.length}/3)`);
+    setTimeout(() => boot(), 3000);
+    return;
+  }
+  showWindow();
   const r = await dialog.showMessageBox(mainWin, {
     type: 'error',
     title: 'Server stopped',
@@ -395,6 +446,68 @@ async function onServerCrash() {
     shell.openPath(LOG_DIR);
     await boot();
   } else app.quit();
+}
+
+function showWindow() {
+  if (!mainWin) createMainWindow();
+  if (mainWin.isMinimized()) mainWin.restore();
+  mainWin.show();
+  mainWin.focus();
+  shownOnce = true;
+}
+
+// ---------------------------------------------------------------- tray + start with Windows
+
+/** Start with Windows only for the installed app (in development it would register electron.exe). */
+const canAutoStart = app.isPackaged && process.platform === 'win32';
+
+function isAutoStart() {
+  return canAutoStart && app.getLoginItemSettings({ args: ['--hidden'] }).openAtLogin;
+}
+function setAutoStart(on) {
+  if (!canAutoStart) return;
+  app.setLoginItemSettings({ openAtLogin: on, args: ['--hidden'] });
+  setUi({ autoStart: on });
+}
+/** First successful start after install: turn "Start with Windows" on (it can be turned off in the tray menu). */
+function enableAutoStartOnce() {
+  if (canAutoStart && getUi().autoStart === null) setAutoStart(true);
+}
+
+function autoStartItem() {
+  return {
+    label: 'Start with Windows',
+    type: 'checkbox',
+    checked: isAutoStart(),
+    enabled: canAutoStart,
+    click: (item) => {
+      setAutoStart(item.checked);
+      buildTray();
+      buildMenu();
+    },
+  };
+}
+
+function buildTray() {
+  if (!tray) {
+    tray = new Tray(ICON ? ICON.resize({ width: 16, height: 16 }) : nativeImage.createEmpty());
+    tray.on('click', showWindow);
+    tray.on('double-click', showWindow);
+  }
+  tray.setToolTip(serverPort ? `ZK Attendance: running on port ${serverPort}` : 'ZK Attendance');
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open ZK Attendance', click: showWindow },
+      { label: 'Open in browser', enabled: Boolean(serverPort), click: () => shell.openExternal(`http://localhost:${serverPort}/`) },
+      { type: 'separator' },
+      autoStartItem(),
+      { label: 'Restart server', click: () => restart() },
+      { label: 'Connection settings…', click: () => openSetup(null) },
+      { label: 'Open log folder', click: () => shell.openPath(LOG_DIR) },
+      { type: 'separator' },
+      { label: 'Quit (stops receiving punches)', click: () => app.quit() },
+    ]),
+  );
 }
 
 // ---------------------------------------------------------------- IPC (setup screen)
@@ -450,8 +563,10 @@ function buildMenu() {
           { label: 'Connection settings…', click: () => openSetup(null) },
           { label: 'Restart server', click: () => restart() },
           { label: 'Open log folder', click: () => shell.openPath(LOG_DIR) },
+          autoStartItem(),
           { type: 'separator' },
-          { role: 'quit', label: 'Quit (stops receiving punches)' },
+          { label: 'Hide to tray (keeps running)', accelerator: 'CmdOrCtrl+W', click: () => mainWin && mainWin.hide() },
+          { label: 'Quit (stops receiving punches)', accelerator: 'CmdOrCtrl+Q', click: () => app.quit() },
         ],
       },
       { label: 'Edit', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
@@ -484,13 +599,10 @@ if (!app.requestSingleInstanceLock()) {
   // Already running: the other instance shows its window
   app.quit();
 } else {
+  // Opening the app again (shortcut, Start menu) while it runs in the tray: show the window
   app.on('second-instance', () => {
-    const w = mainWin && mainWin.isVisible() ? mainWin : setupWin || mainWin;
-    if (w) {
-      if (w.isMinimized()) w.restore();
-      w.show();
-      w.focus();
-    }
+    if (setupWin) return setupWin.focus();
+    if (serverPort) showWindow();
   });
 
   app.whenReady().then(() => {
@@ -498,12 +610,16 @@ if (!app.requestSingleInstanceLock()) {
     boot();
   });
 
-  app.on('window-all-closed', () => app.quit());
+  // The main window only hides; the app and the server keep running in the tray until "Quit"
+  app.on('window-all-closed', () => {
+    if (!server && !setupWin) app.quit();
+  });
 
   app.on('before-quit', (e) => {
-    if (quitting || !server) return;
-    e.preventDefault();
+    if (quitting) return;
     quitting = true;
+    if (!server) return;
+    e.preventDefault();
     stopServer().finally(() => app.quit());
   });
 }

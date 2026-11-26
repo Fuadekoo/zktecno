@@ -35,7 +35,7 @@ module.exports = {
   appId: 'com.zkteco.attendance.desktop',
   productName: 'ZK Attendance',
   directories: { output: 'release' },
-  files: ['main.js', 'preload.js', 'setup.html', 'package.json'],
+  files: ['main.js', 'preload.js', 'setup.html', 'package.json', 'assets/**'],
   extraResources: [
     { from: '../backend/dist', to: 'backend/dist', filter: ['**/*', '!**/*.map'] },
     { from: '../backend/package.json', to: 'backend/package.json' },
@@ -52,11 +52,14 @@ module.exports = {
     },
     { from: '../frontend/out', to: 'frontend' },
   ],
-  win: { target: 'nsis' },
+  icon: 'build/icon.png',
+  win: { target: 'nsis', icon: 'build/icon.png' },
   nsis: {
     oneClick: false,
     allowToChangeInstallationDirectory: true,
     createDesktopShortcut: true,
     shortcutName: 'ZK Attendance',
+    // Start the app (and its server) when the installer finishes
+    runAfterFinish: true,
   },
 };
