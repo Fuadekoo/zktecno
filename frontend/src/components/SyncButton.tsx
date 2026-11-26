@@ -7,7 +7,7 @@ import { Icon } from './icons';
 import { Spinner, useToast } from './ui';
 import { useUser } from './user-context';
 
-/** Pulls fresh data from BioTime into PostgreSQL right now (admins only). */
+/** Pulls fresh data from BioTime into MySQL right now (admins only). */
 export function SyncButton({ onDone, label = 'Sync now' }: { onDone?: () => void; label?: string }) {
   const { isAdmin } = useUser();
   const toast = useToast();

@@ -6,7 +6,7 @@ import { syncRunsRepo } from '../repositories/syncRuns.js';
 import { localDate } from '../utils/http.js';
 import { syncService } from './sync.service.js';
 
-/** Today's overview, read entirely from PostgreSQL (fast, and works while BioTime is briefly down). */
+/** Today's overview, read entirely from MySQL (fast, and works while BioTime is briefly down). */
 export async function getDashboard() {
   const today = localDate();
   const from = `${today} 00:00:00`;

@@ -20,7 +20,7 @@ function validateSection(req: Request, res: Response, next: NextFunction) {
   return validateBody(schema)(req, res, next);
 }
 
-/** Settings page: devices, BioTime, ADMS push, sync. Stored in PostgreSQL. Admin only. */
+/** Settings page: devices, BioTime, ADMS push, sync. Stored in MySQL. Admin only. */
 export const settingsRoutes = Router()
   .use(requireAdmin)
   .get('/', settingsController.get)

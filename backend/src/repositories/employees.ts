@@ -188,9 +188,9 @@ export const employeesRepo = {
   /** One page of employees from the database, in the same shape the BioTime API returns. */
   async listLocal(filters: Record<string, string>, page: number, pageSize: number) {
     const where: Prisma.EmployeeWhereInput = { isDeleted: false };
-    if (filters.emp_code) where.empCode = { contains: filters.emp_code, mode: 'insensitive' };
-    if (filters.first_name) where.firstName = { contains: filters.first_name, mode: 'insensitive' };
-    if (filters.last_name) where.lastName = { contains: filters.last_name, mode: 'insensitive' };
+    if (filters.emp_code) where.empCode = { contains: filters.emp_code };
+    if (filters.first_name) where.firstName = { contains: filters.first_name };
+    if (filters.last_name) where.lastName = { contains: filters.last_name };
     if (filters.department && Number.isInteger(Number(filters.department))) where.departmentId = Number(filters.department);
     const [count, rows] = await Promise.all([
       prisma.employee.count({ where }),

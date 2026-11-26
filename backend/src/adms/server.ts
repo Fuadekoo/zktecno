@@ -2,7 +2,7 @@
  * ADMS push receiver (ZKTeco "Cloud Server" / iclock protocol).
  *
  * Devices are pointed at this server instead of BioTime. Every request is:
- *   1. read: punches in `POST /iclock/cdata?SN=…&table=ATTLOG` are saved to PostgreSQL right away
+ *   1. read: punches in `POST /iclock/cdata?SN=…&table=ATTLOG` are saved to MySQL right away
  *      (de-duplicated, announced by webhook), and
  *   2. forwarded unchanged to BioTime (ADMS_FORWARD_URL), whose reply goes back to the device.
  *      BioTime keeps receiving everything and stays in charge of device commands.

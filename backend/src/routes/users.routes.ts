@@ -4,7 +4,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { createUserSchema, updateUserSchema } from '../validators/schemas.js';
 
-/** Dashboard user accounts (stored in PostgreSQL). Admin only. */
+/** Dashboard user accounts (stored in MySQL). Admin only. */
 export const usersRoutes = Router()
   .use(requireAdmin)
   .get('/', usersController.list)

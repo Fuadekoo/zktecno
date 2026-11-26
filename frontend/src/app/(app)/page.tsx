@@ -11,7 +11,7 @@ import { intervalLabel, shortDateTime, timeAgo } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { Dashboard } from '@/lib/types';
 
-// The page re-reads PostgreSQL every minute; PostgreSQL itself is refreshed from BioTime by the sync job.
+// The page re-reads MySQL every minute; MySQL itself is refreshed from BioTime by the sync job.
 const REFRESH_MS = 60_000;
 
 export default function DashboardPage() {

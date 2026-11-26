@@ -34,13 +34,13 @@
 <body>
 <main>
   <h1>Connection settings</h1>
-  <p class="lead">ZK Attendance keeps its data in PostgreSQL. Enter where your PostgreSQL server is. Devices, BioTime and sync are set later on the dashboard’s <b>Settings</b> page.</p>
+  <p class="lead">ZK Attendance keeps its data in MySQL. Enter where your MySQL server is. Devices, BioTime and sync are set later on the dashboard’s <b>Settings</b> page.</p>
 
   <div id="msg" class="msg"></div>
 
   <form id="form" autocomplete="off">
     <fieldset>
-      <legend>PostgreSQL database</legend>
+      <legend>MySQL database</legend>
       <div class="row">
         <label><span>Server</span><input name="host" required placeholder="127.0.0.1" /></label>
         <label><span>Port</span><input name="dbport" type="number" min="1" max="65535" required /></label>
@@ -49,7 +49,7 @@
         <label><span>User</span><input name="user" required /></label>
         <label><span>&nbsp;</span></label>
       </div>
-      <label><span>Password</span><input name="password" type="password" /><small id="pwHint">The password you chose when installing PostgreSQL.</small></label>
+      <label><span>Password</span><input name="password" type="password" /><small id="pwHint">The MySQL password for this user (XAMPP: often empty).</small></label>
       <label><span>Database name</span><input name="database" required pattern="[A-Za-z0-9_]+" /><small>Created automatically if it doesn’t exist.</small></label>
     </fieldset>
 

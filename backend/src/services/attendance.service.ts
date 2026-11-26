@@ -27,7 +27,7 @@ export interface DailyReportParams {
 
 const MAX_DAYS = 92;
 
-/** Daily attendance from PostgreSQL: first/last punch, worked time, status. */
+/** Daily attendance from MySQL: first/last punch, worked time, status. */
 export async function buildDailyReport(p: DailyReportParams) {
   const startDate = p.startDate || localDate();
   const endDate = p.endDate || startDate;

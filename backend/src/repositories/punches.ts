@@ -52,7 +52,7 @@ const strOrNull = (v: unknown, max: number) => (v === null || v === undefined ||
 const num = (v: unknown) => Number(v ?? 0); // raw COUNT() comes back as BigInt
 
 /** Timestamp column → "YYYY-MM-DD HH:mm:ss" text, so raw rows never go through Date conversion. */
-const ts = (column: string) => Prisma.raw(`to_char(${column}, 'YYYY-MM-DD HH24:MI:SS')`);
+const ts = (column: string) => Prisma.raw(`DATE_FORMAT(${column}, '%Y-%m-%d %H:%i:%s')`);
 
 /**
  * Employees joined through a derived table that keeps one row per emp_code,
@@ -67,7 +67,7 @@ const EMPLOYEE_JOIN = Prisma.sql`LEFT JOIN (
 const SELECT = Prisma.sql`SELECT p.id, p.emp_code,
     ${ts('p.punch_time')} AS punch_time,
     p.punch_state, p.verify_type, p.work_code, p.terminal_sn, p.terminal_alias, p.area_alias,
-    ${ts('p.upload_time')} AS upload_time, p.source::text AS source,
+    ${ts('p.upload_time')} AS upload_time, p.source AS source,
     NULLIF(TRIM(CONCAT_WS(' ', e.first_name, e.last_name)), '') AS employee_name,
     e.department_name
   FROM punches p ${EMPLOYEE_JOIN}`;
@@ -81,7 +81,8 @@ function where(f: PunchFilters) {
   if (f.departmentId) parts.push(Prisma.sql`e.department_id = ${f.departmentId}`);
   if (f.search) {
     const like = `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
-    parts.push(Prisma.sql`(p.emp_code ILIKE ${like} OR CONCAT_WS(' ', e.first_name, e.last_name) ILIKE ${like})`);
+    // MySQL's default collation compares case-insensitively, so LIKE matches "ali" and "Ali"
+    parts.push(Prisma.sql`(p.emp_code LIKE ${like} OR CONCAT_WS(' ', e.first_name, e.last_name) LIKE ${like})`);
   }
   return parts.length ? Prisma.sql`WHERE ${Prisma.join(parts, ' AND ')}` : Prisma.empty;
 }
@@ -201,8 +202,9 @@ export const punchesRepo = {
     for (let i = 0; i < fresh.length; i += 1000) {
       const chunk = fresh.slice(i, i + 1000);
       await prisma.$transaction(async (tx) => {
-        // Serialise id allocation for device punches
-        await tx.$executeRaw`SELECT pg_advisory_xact_lock(4370)`;
+        // Serialise id allocation for device punches (a named lock, held until the end of this transaction)
+        await tx.$queryRaw`SELECT GET_LOCK('zk_punch_ids', 30)`;
+        try {
         const [{ min }] = await tx.$queryRaw<[{ min: number | null }]>`SELECT MIN(id) AS min FROM punches`;
         const start = Math.min(Number(min ?? 0), 0) - 1;
         const data = chunk.map((p, k) => ({
@@ -222,6 +224,9 @@ export const punchesRepo = {
         }));
         await tx.punch.createMany({ data });
         ids.push(...data.map((d) => d.id));
+        } finally {
+          await tx.$queryRaw`SELECT RELEASE_LOCK('zk_punch_ids')`;
+        }
       });
     }
     return ids;
@@ -265,7 +270,7 @@ export const punchesRepo = {
       prisma.$queryRaw<{ punches: bigint; people: bigint }[]>`
         SELECT COUNT(*) AS punches, COUNT(DISTINCT emp_code) AS people FROM punches WHERE punch_time BETWEEN ${a} AND ${b}`,
       prisma.$queryRaw<{ hour: number; count: bigint }[]>`
-        SELECT EXTRACT(HOUR FROM punch_time)::int AS hour, COUNT(*) AS count FROM punches WHERE punch_time BETWEEN ${a} AND ${b} GROUP BY 1`,
+        SELECT HOUR(punch_time) AS hour, COUNT(*) AS count FROM punches WHERE punch_time BETWEEN ${a} AND ${b} GROUP BY 1`,
     ]);
     const hourly = Array.from({ length: 24 }, (_, hour) => ({ hour, count: 0 }));
     for (const h of hours) {
@@ -291,14 +296,14 @@ export const punchesRepo = {
       { emp_code: string; date: string; first_punch: string; last_punch: string; punch_count: bigint; terminals: string | null }[]
     >`
       SELECT p.emp_code,
-        to_char(p.punch_time::date, 'YYYY-MM-DD') AS date,
+        DATE_FORMAT(p.punch_time, '%Y-%m-%d') AS date,
         ${ts('MIN(p.punch_time)')} AS first_punch,
         ${ts('MAX(p.punch_time)')} AS last_punch,
         COUNT(*) AS punch_count,
-        string_agg(DISTINCT COALESCE(p.terminal_alias, p.terminal_sn), ', ') AS terminals
+        GROUP_CONCAT(DISTINCT COALESCE(p.terminal_alias, p.terminal_sn) SEPARATOR ', ') AS terminals
       FROM punches p
       WHERE p.punch_time BETWEEN ${toDb(from)} AND ${toDb(to)} ${extra}
-      GROUP BY p.emp_code, p.punch_time::date`;
+      GROUP BY p.emp_code, DATE(p.punch_time)`;
     return rows.map((r) => ({ ...r, punch_count: num(r.punch_count) }));
   },
 

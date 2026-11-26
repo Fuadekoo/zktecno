@@ -46,8 +46,8 @@ module.exports = {
       filter: [
         ...packages.map((p) => `${p}/**/*`),
         '!**/*.map', '!**/*.md', '!**/*.d.ts', '!**/*.d.mts', '!**/*.d.cts',
-        // Prisma ships a query compiler for every database; this app only uses PostgreSQL
-        '!@prisma/client/runtime/*{mysql,sqlite,sqlserver,cockroachdb}*',
+        // Prisma ships a query compiler for every database; this app only uses MySQL
+        '!@prisma/client/runtime/*{postgresql,sqlite,sqlserver,cockroachdb}*',
       ],
     },
     { from: '../frontend/out', to: 'frontend' },

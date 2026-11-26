@@ -2,11 +2,11 @@
 
 A web dashboard for ZKTeco attendance devices, built on the **BioTime 8.5 REST API**.
 
-- **Backend:** Node.js + Express + TypeScript + **Prisma ORM** + **PostgreSQL**
+- **Backend:** Node.js + Express + TypeScript + **Prisma ORM** + **MySQL**
 - **Frontend:** Next.js (TypeScript, Tailwind)
 
 ```
-ZKTeco devices ──ADMS──▶ BioTime 8.5 ──REST──▶ Express API ──Prisma──▶ PostgreSQL
+ZKTeco devices ──ADMS──▶ BioTime 8.5 ──REST──▶ Express API ──Prisma──▶ MySQL
                                    ▲             │    (sync every hour + "Sync now")
                                    └ live edits ─┘
                                                  │──▶ Webhooks: new punches POSTed to your URLs
@@ -15,12 +15,12 @@ ZKTeco devices ──ADMS──▶ BioTime 8.5 ──REST──▶ Express API �
 ```
 
 - Devices upload punches to **BioTime**. BioTime must be running, with the devices online in it.
-- Every hour the backend copies **punches, employees and devices** from BioTime into **PostgreSQL**.
+- Every hour the backend copies **punches, employees and devices** from BioTime into **MySQL**.
   Admins can click **Sync now** at any time.
 - **Every sync run is saved** (`sync_runs`): what was read, what was new, how long it took, and any error.
 - **New punches go out by webhook** to any URLs you configure. Every delivery and retry is saved (`webhook_deliveries`).
-- **Dashboard, Punch Logs and Attendance Report read from PostgreSQL**, so they are fast and keep working while BioTime is briefly down.
-- **Employees, departments, positions and areas are edited live in BioTime** (the source of truth). PostgreSQL refreshes right after each change.
+- **Dashboard, Punch Logs and Attendance Report read from MySQL**, so they are fast and keep working while BioTime is briefly down.
+- **Employees, departments, positions and areas are edited live in BioTime** (the source of truth). MySQL refreshes right after each change.
 
 ## Features
 
@@ -39,8 +39,9 @@ ZKTeco devices ──ADMS──▶ BioTime 8.5 ──REST──▶ Express API �
 ## Requirements
 
 - Node.js 18.17+ (tested on Node 24)
-- PostgreSQL 13+ (tested on PostgreSQL 17). Prisma creates the database and tables.
-- BioTime 8.5 reachable from the backend machine, plus a BioTime system (admin) user
+- MySQL 8+ (or MariaDB 10.6+). The database and tables are created automatically.
+- ZKTeco devices on the network (read directly on port 4370 and/or pushing over ADMS).
+  BioTime 8.5 is optional.
 
 ## Setup
 
@@ -51,27 +52,23 @@ npm run setup            # installs everything (and generates the Prisma client)
 Edit **`backend/.env`** (copy `backend/.env.example` if it's missing):
 
 ```ini
-# BioTime
-BIOTIME_URL=http://192.168.1.20:8090
-BIOTIME_USERNAME=admin
-BIOTIME_PASSWORD=your-biotime-password
-
-# PostgreSQL (used by both the server and Prisma)
+# MySQL (used by both the server and Prisma)
 DB_HOST=127.0.0.1
-DB_PORT=5432
-DB_USER=postgres
-DB_PASSWORD=your-postgres-password
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=your-mysql-password
 DB_NAME=zkteco_attendance
 
-# Sync (3600 = every hour)
-SYNC_INTERVAL_SECONDS=3600
-SYNC_INITIAL_DAYS=30            # history imported on the very first run
+# Signs login sessions (required in production)
+APP_JWT_SECRET=<long random string>
 
 # First dashboard admin (created once, on first start). Min 8 characters.
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=pick-a-strong-password
-APP_JWT_SECRET=<long random string>
 ```
+
+Devices, ADMS push, sync timing and BioTime are **not** in `.env`: set them on the dashboard's
+**Settings** page after signing in (they are stored in the database).
 
 ```bash
 npm run dev              # backend :4000 + frontend :3000
@@ -80,8 +77,8 @@ npm run dev              # backend :4000 + frontend :3000
 Open http://localhost:3000 and sign in with `ADMIN_USERNAME` / `ADMIN_PASSWORD`. On first start:
 1. `prisma migrate deploy` creates the database and all tables
 2. the first admin user is created
-3. BioTime is checked (`[biotime] Connected OK`)
-4. the first sync imports the last `SYNC_INITIAL_DAYS` days of punches (no webhooks for this history import)
+3. go to **Settings → Devices → Scan network** to find and add your devices
+4. the first read imports the last 30 days of punches (no webhooks for this history import)
 
 ### Open it from other devices (phone, other PCs)
 
@@ -129,7 +126,7 @@ To keep everything on this computer only, set `HOST=127.0.0.1` in `backend/.env`
 
 ```
 ZKTeco device ──ADMS push──▶ this backend :8082 ──forwards the same request──▶ BioTime
-                                   │ saves punches to PostgreSQL right away + webhooks
+                                   │ saves punches to MySQL right away + webhooks
 ```
 
 Punches reach the dashboard and webhooks within seconds instead of at the next hourly sync. BioTime keeps receiving everything,
@@ -192,7 +189,7 @@ ZK_TIMEOUT_MS=10000
   first-run history (`SYNC_INITIAL_DAYS`, no webhooks) and webhooks as the BioTime job.
 - Devices return their **whole log** every time (the protocol has no date filter). Only records inside the sync window are saved.
 - **No duplicates across sources.** A punch is the same if it has the same `emp_code`, `punch_time` and device serial.
-  A device punch already in PostgreSQL is skipped. When BioTime later reports a punch that was first read from the device,
+  A device punch already in MySQL is skipped. When BioTime later reports a punch that was first read from the device,
   the BioTime row replaces it (`punches.source` goes from `device` to `biotime`) and **no second webhook is sent**.
 - Device-read punches have **negative ids** so they can never collide with BioTime transaction ids.
 - If one device is unreachable, the others are still read. The run succeeds with a warning, and fails only if every device failed.
@@ -296,22 +293,22 @@ Sign in with `POST /api/auth/login` `{ "username", "password" }`. The response s
 | Method | Route | Role | Source |
 | --- | --- | --- | --- |
 | GET | `/health` | public | |
-| POST | `/auth/login`, `/auth/logout`, `/auth/change-password`; GET `/auth/me` | any | PostgreSQL |
-| GET | `/dashboard` | any | PostgreSQL |
-| GET | `/transactions?search=&emp_code=&department=&terminal_sn=&start_time=&end_time=&page=&page_size=` | any | PostgreSQL |
-| GET | `/transactions/export?start_time=&end_time=…` (CSV) | any | PostgreSQL |
-| GET | `/reports/daily?start_date=&end_date=&department=&emp_code=&include_absent=true`, `/reports/daily/export` | any | PostgreSQL |
+| POST | `/auth/login`, `/auth/logout`, `/auth/change-password`; GET `/auth/me` | any | MySQL |
+| GET | `/dashboard` | any | MySQL |
+| GET | `/transactions?search=&emp_code=&department=&terminal_sn=&start_time=&end_time=&page=&page_size=` | any | MySQL |
+| GET | `/transactions/export?start_time=&end_time=…` (CSV) | any | MySQL |
+| GET | `/reports/daily?start_date=&end_date=&department=&emp_code=&include_absent=true`, `/reports/daily/export` | any | MySQL |
 | GET | `/employees`, `/employees/all`, `/employees/:id` (same for `departments`, `areas`, `positions`, `devices`) | any | BioTime |
 | POST / PATCH / DELETE | `/employees`, `/departments`, `/areas`, `/positions` | admin | BioTime |
-| GET | `/system/status`, `/system/sync-runs?job=&page=`, `/system/biotime-health` | any | PostgreSQL |
+| GET | `/system/status`, `/system/sync-runs?job=&page=`, `/system/biotime-health` | any | MySQL |
 | POST | `/system/sync` `{ "job": "all"\|"punches"\|"employees"\|"devices", "start_date"?, "end_date"? }` | admin | |
-| GET | `/system/audit?page=&entity=` | admin | PostgreSQL |
-| GET / POST | `/webhooks` | admin | PostgreSQL |
-| GET / PATCH / DELETE | `/webhooks/:id` (PATCH accepts `rotate_secret: true`) | admin | PostgreSQL |
+| GET | `/system/audit?page=&entity=` | admin | MySQL |
+| GET / POST | `/webhooks` | admin | MySQL |
+| GET / PATCH / DELETE | `/webhooks/:id` (PATCH accepts `rotate_secret: true`) | admin | MySQL |
 | POST | `/webhooks/:id/test` | admin | |
-| GET | `/webhooks/deliveries?webhook_id=&status=&page=`, `/webhooks/deliveries/:id` | admin | PostgreSQL |
+| GET | `/webhooks/deliveries?webhook_id=&status=&page=`, `/webhooks/deliveries/:id` | admin | MySQL |
 | POST | `/webhooks/deliveries/:id/redeliver` | admin | |
-| GET / POST / PATCH / DELETE | `/users`, `/users/:id` | admin | PostgreSQL |
+| GET / POST / PATCH / DELETE | `/users`, `/users/:id` | admin | MySQL |
 
 ## Production
 
@@ -320,23 +317,46 @@ npm run build    # backend: prisma generate + tsc; frontend: next build
 npm start        # backend applies migrations, then both start
 ```
 
-- Set `NODE_ENV=production`. The backend refuses to start without a real `APP_JWT_SECRET`.
-- **`BACKEND_URL` is read when the frontend is built.** If the backend isn't at `http://localhost:4000`, run
-  `BACKEND_URL=http://host:4000 npm run build` (or set it in `frontend/.env`).
-- Use a dedicated PostgreSQL user instead of `postgres`:
+**On the server:**
+
+1. Install Node.js 18.17+ and MySQL 8+.
+2. Copy the project (git clone), then `npm run setup`.
+3. `cp backend/.env.example backend/.env` and fill it in: MySQL login, a new `APP_JWT_SECRET`
+   (`node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`), `ADMIN_PASSWORD`.
+4. `npm run build`, then `npm start` (keep it running with a service manager such as pm2,
+   NSSM on Windows, or systemd on Linux).
+5. Sign in, then add your devices under **Settings**.
+
+Notes:
+
+- `NODE_ENV=production`: the backend refuses to start without a real `APP_JWT_SECRET`.
+- `COOKIE_SECURE=true` only when the dashboard is served over **HTTPS**. Over plain `http://`, keep it
+  `false` or sign-in won't stick.
+- **`BACKEND_URL` is read when the frontend is built.** If the backend isn't at `http://localhost:4000`,
+  set it in `frontend/.env` before `npm run build`.
+- Use a dedicated MySQL user instead of `root`:
   ```sql
-  CREATE USER zkteco WITH PASSWORD 'strong-password';
-  CREATE DATABASE zkteco_attendance OWNER zkteco;
+  CREATE DATABASE zkteco_attendance DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+  CREATE USER 'zkteco'@'localhost' IDENTIFIED BY 'strong-password';
+  GRANT ALL PRIVILEGES ON zkteco_attendance.* TO 'zkteco'@'localhost';
   ```
-  Then set `DB_USER=zkteco`. `prisma migrate dev` also needs permission to create a temporary "shadow" database (`ALTER USER zkteco CREATEDB;`). `migrate deploy` (used in production) does not.
-- Put HTTPS (nginx, IIS, Caddy) in front of port 3000 only. Webhook receivers should use `https://` URLs.
+  Then set `DB_USER=zkteco`. (`prisma migrate dev`, used only in development, also needs rights to
+  create a temporary "shadow" database.)
+- Open these ports in the server's firewall: **3000** (dashboard) and the **ADMS port** (default 8082)
+  if devices push to this server. Put HTTPS (nginx, IIS, Caddy) in front of port 3000.
+- Webhook receivers should use `https://` URLs.
+
+**Moving existing data from PostgreSQL (one time):** put the old login in `backend/.env` as
+`PG_HOST / PG_PORT / PG_USER / PG_PASSWORD / PG_DATABASE`, then run
+`cd backend && npm run db:copy-from-postgres`. It creates the MySQL tables, copies every row (same ids,
+same times) and checks the counts. PostgreSQL is only read. Remove the `PG_*` lines afterwards.
 
 ## Troubleshooting
 
 | Message | Fix |
 | --- | --- |
-| `PostgreSQL rejected the login …` | Wrong `DB_USER` / `DB_PASSWORD` in `backend/.env`. |
-| `PostgreSQL is not reachable …` | The PostgreSQL service is stopped (Windows: Services → postgresql-x64-17 → Start), or wrong host/port. |
+| `MySQL rejected the login …` | Wrong `DB_USER` / `DB_PASSWORD` in `backend/.env`. |
+| `MySQL is not reachable …` | The MySQL service is stopped (Windows: Services → MySQL80 → Start, or the XAMPP control panel), or wrong host/port. |
 | `Tables are missing` / `Database … does not exist` | Run `npm run db:deploy` in `backend/`. |
 | `Cannot reach BioTime server at …` | Wrong `BIOTIME_URL`, BioTime stopped, or a firewall. Open the URL in a browser on the backend machine. |
 | `BioTime rejected the login …` | Wrong `BIOTIME_USERNAME` / `BIOTIME_PASSWORD`. Use a BioTime **system user**, not an employee. |
@@ -353,7 +373,7 @@ The `desktop/` folder packages everything as one Windows app. Opening **ZK Atten
 server (API, device sync and the ADMS push receiver) and shows the dashboard. The server serves the
 dashboard itself on one port. Closing the app stops the server.
 
-- **Needs PostgreSQL** installed on the PC (or reachable on the network). On first start a setup
+- **Needs MySQL** installed on the PC (or reachable on the network). On first start a setup
   screen asks for the connection, creates the database if needed, and creates the first `admin` login.
 - Connection settings are saved in `%APPDATA%\ZK Attendance\config.json` (database password encrypted
   with Windows' key store). Logs go to `%APPDATA%\ZK Attendance\logs\server.log`.

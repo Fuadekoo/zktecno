@@ -4,7 +4,7 @@ import { requireAdmin } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
 import { createWebhookSchema, updateWebhookSchema, sendPastPunchesSchema } from '../validators/schemas.js';
 
-/** Outgoing webhooks and their delivery log (all stored in PostgreSQL). Admin only. */
+/** Outgoing webhooks and their delivery log (all stored in MySQL). Admin only. */
 export const webhooksRoutes = Router()
   .use(requireAdmin)
   .get('/', c.list)

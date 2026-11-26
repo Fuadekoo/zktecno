@@ -2,7 +2,7 @@
  * Time convention for the database
  * --------------------------------
  * BioTime reports punch times as local wall-clock strings ("2026-11-25 08:30:00") with no time zone.
- * Prisma always writes a JS Date to PostgreSQL as UTC. To keep the database holding exactly the wall-clock
+ * Prisma always writes a JS Date to MySQL as UTC. To keep the database holding exactly the wall-clock
  * value (so "08:30" stays "08:30", and SQL like DATE()/HOUR() works on it), every DATETIME goes
  * through these helpers: the wall-clock value is stored in the Date's UTC fields.
  *

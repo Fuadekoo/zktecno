@@ -1,5 +1,5 @@
 /**
- * Departments, areas and positions stored in PostgreSQL (used when BioTime is off).
+ * Departments, areas and positions stored in MySQL (used when BioTime is off).
  * They are served in the same shape as the BioTime API (dept_code / dept_name / parent_dept, …),
  * so the existing pages work unchanged.
  */
@@ -86,8 +86,8 @@ export function orgUnitsRepo(kind: OrgUnitKind) {
   return {
     async list(filters: Record<string, string>, page: number, pageSize: number) {
       const where: Prisma.OrgUnitWhereInput = { kind };
-      if (filters[k.code]) where.code = { contains: filters[k.code], mode: 'insensitive' };
-      if (filters[k.name]) where.name = { contains: filters[k.name], mode: 'insensitive' };
+      if (filters[k.code]) where.code = { contains: filters[k.code] };
+      if (filters[k.name]) where.name = { contains: filters[k.name] };
       if (filters[k.parent] && Number.isInteger(Number(filters[k.parent]))) where.parentId = Number(filters[k.parent]);
       const [count, rows] = await Promise.all([
         prisma.orgUnit.count({ where }),

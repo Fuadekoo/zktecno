@@ -1,5 +1,5 @@
 /**
- * Settings stored in PostgreSQL and edited on the Settings page (instead of backend/.env).
+ * Settings stored in MySQL and edited on the Settings page (instead of backend/.env).
  *
  * - `app_settings` holds the BioTime, ADMS and sync sections as JSON.
  * - `zk_devices` holds the attendance devices.

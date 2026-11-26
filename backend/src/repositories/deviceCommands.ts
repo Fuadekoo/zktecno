@@ -171,9 +171,13 @@ export const deviceCommandsRepo = {
   async latestUserCommands(empCodes: string[]) {
     if (!empCodes.length) return [];
     return prisma.$queryRaw<{ emp_code: string; device_id: number; kind: string; status: CommandStatus; result: string | null; created_at: Date }[]>`
-      SELECT DISTINCT ON (emp_code, device_id) emp_code, device_id, kind, status, result, created_at
-      FROM device_commands
-      WHERE emp_code IN (${Prisma.join(empCodes)}) AND kind IN ('user_upsert', 'user_delete')
-      ORDER BY emp_code, device_id, id DESC`;
+      SELECT c.emp_code, c.device_id, c.kind, c.status, c.result, c.created_at
+      FROM device_commands c
+      JOIN (
+        SELECT MAX(id) AS id FROM device_commands
+        WHERE emp_code IN (${Prisma.join(empCodes)}) AND kind IN ('user_upsert', 'user_delete')
+        GROUP BY emp_code, device_id
+      ) latest ON latest.id = c.id
+      ORDER BY c.emp_code, c.device_id`;
   },
 };

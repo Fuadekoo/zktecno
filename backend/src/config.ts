@@ -54,8 +54,8 @@ const EnvSchema = z.object({
   ADMS_ALLOWED_SN: z.string().default(''),
 
   DB_HOST: z.string().default('127.0.0.1'),
-  DB_PORT: num(5432),
-  DB_USER: z.string().default('postgres'),
+  DB_PORT: num(3306),
+  DB_USER: z.string().default('root'),
   DB_PASSWORD: z.string().default(''),
   DB_NAME: z
     .string()

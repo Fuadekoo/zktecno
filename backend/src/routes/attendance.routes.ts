@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { dashboardController, reportsController, transactionsController } from '../controllers/attendance.controllers.js';
 
-// All read from the PostgreSQL mirror that the sync job keeps up to date.
+// All read from the MySQL mirror that the sync job keeps up to date.
 export const dashboardRoutes = Router().get('/', dashboardController.get);
 
 export const transactionsRoutes = Router()

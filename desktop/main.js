@@ -5,7 +5,7 @@
  * Electron's built-in Node, waits until it is ready, then opens the dashboard, which the backend
  * serves on the same port. Closing the app stops the server.
  *
- * Connection settings (PostgreSQL, port) live in <userData>/config.json; the database password is
+ * Connection settings (MySQL, port) live in <userData>/config.json; the database password is
  * encrypted with the OS key store (safeStorage). Everything else is set on the dashboard's Settings page.
  */
 const { app, BrowserWindow, Menu, Tray, dialog, ipcMain, nativeImage, safeStorage, shell } = require('electron');
@@ -34,7 +34,7 @@ const START_HIDDEN = process.argv.includes('--hidden');
 
 // ---------------------------------------------------------------- config
 
-const DEFAULTS = { db: { host: '127.0.0.1', port: 5432, user: 'postgres', password: '', database: 'zkteco_attendance' }, port: 4000 };
+const DEFAULTS = { db: { host: '127.0.0.1', port: 3306, user: 'root', password: '', database: 'zkteco_attendance' }, port: 4000 };
 
 function encrypt(text) {
   if (!text) return { plain: '' };
@@ -120,61 +120,59 @@ function writeLog(line) {
 
 // ---------------------------------------------------------------- database helpers (setup screen)
 
-function pg() {
-  return require(path.join(BACKEND_DIR, 'node_modules', 'pg'));
+function mariadb() {
+  return require(path.join(BACKEND_DIR, 'node_modules', 'mariadb'));
+}
+
+/** A connection to the MySQL server (no database selected). */
+function connectServer(db) {
+  return mariadb().createConnection({
+    host: db.host,
+    port: Number(db.port),
+    user: db.user,
+    password: db.password,
+    allowPublicKeyRetrieval: true,
+    connectTimeout: 8000,
+  });
 }
 
 /** Connect to the server; report whether the database exists and whether it already has users. */
 async function testDatabase(db) {
-  const { Client } = pg();
-  const base = { host: db.host, port: Number(db.port), user: db.user, password: db.password, connectionTimeoutMillis: 8000 };
-  const admin = new Client({ ...base, database: 'postgres' });
+  let c;
   try {
-    await admin.connect();
+    c = await connectServer(db);
   } catch (err) {
-    return { ok: false, message: friendlyPgError(err, db) };
+    return { ok: false, message: friendlyDbError(err, db) };
   }
   try {
-    const exists = (await admin.query('SELECT 1 FROM pg_database WHERE datname = $1', [db.database])).rowCount > 0;
+    const exists = (await c.query('SELECT 1 FROM information_schema.schemata WHERE schema_name = ?', [db.database])).length > 0;
     if (!exists) return { ok: true, exists: false, hasUsers: false, message: `Connected. Database “${db.database}” doesn’t exist yet. It will be created.` };
-  } finally {
-    await admin.end().catch(() => {});
-  }
-  const c = new Client({ ...base, database: db.database });
-  try {
-    await c.connect();
-    const table = (await c.query(`SELECT to_regclass('public.users') AS t`)).rows[0].t;
-    const users = table ? Number((await c.query('SELECT count(*)::int AS n FROM users')).rows[0].n) : 0;
+    const table = (await c.query('SELECT 1 FROM information_schema.tables WHERE table_schema = ? AND table_name = ?', [db.database, 'users'])).length > 0;
+    const users = table ? Number((await c.query(`SELECT COUNT(*) AS n FROM \`${db.database}\`.users`))[0].n) : 0;
     return { ok: true, exists: true, hasUsers: users > 0, message: users > 0 ? `Connected to “${db.database}” (${users} dashboard user${users === 1 ? '' : 's'}).` : `Connected to “${db.database}” (no users yet).` };
   } catch (err) {
-    return { ok: false, message: friendlyPgError(err, db) };
+    return { ok: false, message: friendlyDbError(err, db) };
   } finally {
     await c.end().catch(() => {});
   }
 }
 
 async function createDatabaseIfMissing(db) {
-  const { Client } = pg();
-  const c = new Client({ host: db.host, port: Number(db.port), user: db.user, password: db.password, database: 'postgres', connectionTimeoutMillis: 8000 });
-  await c.connect();
+  if (!/^[A-Za-z0-9_]+$/.test(db.database)) throw new Error('Database name may only contain letters, numbers and underscores');
+  const c = await connectServer(db);
   try {
-    const exists = (await c.query('SELECT 1 FROM pg_database WHERE datname = $1', [db.database])).rowCount > 0;
-    if (!exists) {
-      if (!/^[A-Za-z0-9_]+$/.test(db.database)) throw new Error('Database name may only contain letters, numbers and underscores');
-      await c.query(`CREATE DATABASE "${db.database}"`);
-      writeLog(`[desktop] Created database ${db.database}`);
-    }
+    await c.query(`CREATE DATABASE IF NOT EXISTS \`${db.database}\` DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`);
   } finally {
     await c.end().catch(() => {});
   }
 }
 
-function friendlyPgError(err, db) {
+function friendlyDbError(err, db) {
   const m = `${err.code || ''} ${err.message || ''}`;
-  if (/ECONNREFUSED/.test(m)) return `PostgreSQL isn’t running at ${db.host}:${db.port}. Install or start PostgreSQL (Windows: Services → postgresql), then try again.`;
-  if (/28P01|password authentication/i.test(m)) return `Wrong password for PostgreSQL user “${db.user}”.`;
-  if (/password must be a string|SASL/i.test(m)) return `Enter the password for PostgreSQL user “${db.user}”.`;
-  if (/28000|role .* does not exist/i.test(m)) return `PostgreSQL has no user “${db.user}”. The default user is usually “postgres”.`;
+  if (/ECONNREFUSED/.test(m)) return `MySQL isn’t running at ${db.host}:${db.port}. Install or start MySQL (Windows: Services → MySQL80, or the XAMPP control panel), then try again.`;
+  if (/ER_ACCESS_DENIED_ERROR|Access denied/i.test(m)) return `MySQL rejected user “${db.user}” with that password.`;
+  if (/ER_NOT_SUPPORTED_AUTH_MODE|authentication plugin/i.test(m)) return `MySQL user “${db.user}” uses a login method this app can’t use. Set it to mysql_native_password or caching_sha2_password.`;
+  if (/ER_DBACCESS_DENIED_ERROR|ER_TABLEACCESS_DENIED/i.test(m)) return `MySQL user “${db.user}” isn’t allowed to use database “${db.database}”.`;
   if (/ENOTFOUND|EAI_AGAIN/.test(m)) return `Can’t find the database server “${db.host}”.`;
   if (/timeout|ETIMEDOUT/i.test(m)) return `No answer from ${db.host}:${db.port} (timed out).`;
   return err.message || String(err);
@@ -532,7 +530,7 @@ ipcMain.handle('setup:save', async (_e, form) => {
   try {
     await createDatabaseIfMissing(db);
   } catch (err) {
-    return { ok: false, message: friendlyPgError(err, db) };
+    return { ok: false, message: friendlyDbError(err, db) };
   }
   const old = loadConfig();
   saveConfig({ db, port, jwtSecret: old?.jwtSecret, adminPassword: check.hasUsers ? '' : form.adminPassword });
@@ -545,7 +543,7 @@ ipcMain.handle('setup:openLogs', () => shell.openPath(LOG_DIR));
 /** An empty password field means "keep the saved one". */
 function withSavedPassword(form) {
   const saved = loadConfig();
-  const db = { host: String(form.db.host || '').trim(), port: Number(form.db.port) || 5432, user: String(form.db.user || '').trim(), password: form.db.password, database: String(form.db.database || '').trim() };
+  const db = { host: String(form.db.host || '').trim(), port: Number(form.db.port) || 3306, user: String(form.db.user || '').trim(), password: form.db.password, database: String(form.db.database || '').trim() };
   if (!db.password && saved) db.password = saved.db.password;
   return { db };
 }

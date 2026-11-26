@@ -28,7 +28,7 @@ async function main() {
     console.error(`[db] ${describeDbError(err)}`);
     process.exit(1);
   }
-  console.log(`[db] Connected to PostgreSQL ${config.db.host}:${config.db.port}/${config.db.database} (Prisma)`);
+  console.log(`[db] Connected to MySQL ${config.db.host}:${config.db.port}/${config.db.database} (Prisma)`);
 
   // 2. HTTP API
   const server = createApp().listen(config.port, config.host, () => {

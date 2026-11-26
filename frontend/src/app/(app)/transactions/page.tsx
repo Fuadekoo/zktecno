@@ -47,7 +47,7 @@ export default function TransactionsPage() {
     <>
       <PageHeader
         title="Punch Logs"
-        description="Every check-in and check-out, from the PostgreSQL copy synced from BioTime."
+        description="Every check-in and check-out from your devices."
         actions={
           <>
             <button className="btn-secondary" onClick={reload} disabled={loading}>

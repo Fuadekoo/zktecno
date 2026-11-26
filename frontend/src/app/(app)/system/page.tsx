@@ -69,7 +69,7 @@ export default function SystemPage() {
     <>
       <PageHeader
         title="Sync & Activity"
-        description="BioTime data is copied into PostgreSQL on a schedule. Reports and punch logs read from PostgreSQL."
+        description="Punches arrive from your devices (live push and scheduled reads) and are saved in MySQL. Reports and punch logs read from MySQL."
         actions={
           <>
             <button className="btn-secondary" onClick={status.reload} disabled={status.loading}>
@@ -295,7 +295,7 @@ export default function SystemPage() {
             <div className="flex flex-wrap items-end justify-between gap-3 border-b border-slate-200 px-5 py-4">
               <div>
                 <h2 className="font-semibold text-slate-900">Sync history</h2>
-                <p className="text-sm text-slate-500">Every sync run saved in PostgreSQL: what was read from BioTime and what was new.</p>
+                <p className="text-sm text-slate-500">Every sync run saved in the database: what was read and what was new.</p>
               </div>
               <select className="input w-40" value={runsJob} onChange={(e) => { setRunsJob(e.target.value); setRunsPage(1); }}>
                 <option value="">All jobs</option>
@@ -394,7 +394,7 @@ export default function SystemPage() {
               </p>
             </div>
             <div>
-              <p className="label">PostgreSQL database</p>
+              <p className="label">MySQL database</p>
               <p className="font-mono">
                 {s.database.host}:{s.database.port}/{s.database.name}
               </p>

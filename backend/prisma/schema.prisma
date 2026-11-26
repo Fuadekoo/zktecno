@@ -1,7 +1,7 @@
-// PostgreSQL schema for the BioTime attendance dashboard.
+// MySQL schema for the BioTime attendance dashboard.
 // Change this file, then run `npm run db:migrate:dev -- --name <what-changed>` to create a migration.
 //
-// Time convention: TIMESTAMP (without time zone) columns hold the local wall-clock time used by BioTime
+// Time convention: DATETIME columns hold the local wall-clock time used by BioTime
 // ("2026-11-25 08:30:00"), not UTC. See src/db/time.ts for the conversion helpers.
 
 generator client {
@@ -12,7 +12,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "mysql"
 }
 
 enum Role {
@@ -62,9 +62,9 @@ model User {
   passwordHash String     @map("password_hash") @db.VarChar(255)
   role         Role       @default(viewer)
   isActive     Boolean    @default(true) @map("is_active")
-  lastLoginAt  DateTime?  @map("last_login_at") @db.Timestamp(0)
-  createdAt    DateTime   @map("created_at") @db.Timestamp(0)
-  updatedAt    DateTime   @map("updated_at") @db.Timestamp(0)
+  lastLoginAt  DateTime?  @map("last_login_at") @db.DateTime(0)
+  createdAt    DateTime   @map("created_at") @db.DateTime(0)
+  updatedAt    DateTime   @map("updated_at") @db.DateTime(0)
   auditLogs    AuditLog[]
 
   @@map("users")
@@ -96,7 +96,7 @@ model Employee {
   /// Created in this dashboard (not read from a device): device syncs never mark it deleted
   createdInApp   Boolean  @default(false) @map("created_in_app")
   isDeleted      Boolean  @default(false) @map("is_deleted")
-  syncedAt       DateTime @map("synced_at") @db.Timestamp(0)
+  syncedAt       DateTime @map("synced_at") @db.DateTime(0)
 
   @@index([empCode])
   @@index([departmentId])
@@ -112,12 +112,12 @@ model Device {
   state            Int?      @db.SmallInt
   areaName         String?   @map("area_name") @db.VarChar(128)
   fwVer            String?   @map("fw_ver") @db.VarChar(64)
-  lastActivity     DateTime? @map("last_activity") @db.Timestamp(0)
+  lastActivity     DateTime? @map("last_activity") @db.DateTime(0)
   userCount        Int?      @map("user_count")
   fpCount          Int?      @map("fp_count")
   faceCount        Int?      @map("face_count")
   transactionCount Int?      @map("transaction_count")
-  syncedAt         DateTime  @map("synced_at") @db.Timestamp(0)
+  syncedAt         DateTime  @map("synced_at") @db.DateTime(0)
 
   @@index([sn])
   @@map("devices")
@@ -130,17 +130,17 @@ model Punch {
   id            Int         @id
   source        PunchSource @default(biotime)
   empCode       String      @map("emp_code") @db.VarChar(32)
-  punchTime     DateTime    @map("punch_time") @db.Timestamp(0)
+  punchTime     DateTime    @map("punch_time") @db.DateTime(0)
   punchState    String?     @map("punch_state") @db.VarChar(8)
   verifyType    Int?        @map("verify_type") @db.SmallInt
   workCode      String?     @map("work_code") @db.VarChar(32)
   terminalSn    String?     @map("terminal_sn") @db.VarChar(64)
   terminalAlias String?     @map("terminal_alias") @db.VarChar(128)
   areaAlias     String?     @map("area_alias") @db.VarChar(128)
-  uploadTime    DateTime?   @map("upload_time") @db.Timestamp(0)
+  uploadTime    DateTime?   @map("upload_time") @db.DateTime(0)
   /// The sync run that first saved this punch
   syncRunId     Int?        @map("sync_run_id")
-  syncedAt      DateTime    @map("synced_at") @db.Timestamp(0)
+  syncedAt      DateTime    @map("synced_at") @db.DateTime(0)
   syncRun       SyncRun?    @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
 
   @@index([punchTime])
@@ -156,8 +156,8 @@ model SyncRun {
   job               SyncJob
   trigger           SyncTrigger
   status            RunStatus         @default(running)
-  startedAt         DateTime          @map("started_at") @db.Timestamp(0)
-  finishedAt        DateTime?         @map("finished_at") @db.Timestamp(0)
+  startedAt         DateTime          @map("started_at") @db.DateTime(0)
+  finishedAt        DateTime?         @map("finished_at") @db.DateTime(0)
   durationMs        Int?              @map("duration_ms")
   /// Records received from BioTime
   fetched           Int               @default(0)
@@ -168,10 +168,10 @@ model SyncRun {
   /// Records removed or marked deleted
   removed           Int               @default(0)
   /// Time window read from BioTime (punches only)
-  rangeFrom         DateTime?         @map("range_from") @db.Timestamp(0)
-  rangeTo           DateTime?         @map("range_to") @db.Timestamp(0)
+  rangeFrom         DateTime?         @map("range_from") @db.DateTime(0)
+  rangeTo           DateTime?         @map("range_to") @db.DateTime(0)
   /// Incremental punch sync continues from here on the next run
-  cursorAt          DateTime?         @map("cursor_at") @db.Timestamp(0)
+  cursorAt          DateTime?         @map("cursor_at") @db.DateTime(0)
   /// Webhook deliveries queued by this run
   webhooksQueued    Int               @default(0) @map("webhooks_queued")
   error             String?           @db.Text
@@ -194,7 +194,7 @@ model AuditLog {
   summary   String?  @db.VarChar(255)
   details   Json?
   ip        String?  @db.VarChar(64)
-  createdAt DateTime @map("created_at") @db.Timestamp(0)
+  createdAt DateTime @map("created_at") @db.DateTime(0)
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
   @@index([createdAt])
@@ -212,10 +212,10 @@ model Webhook {
   /// Subscribed events, e.g. ["punch.created", "sync.failed"]
   events         Json
   isActive       Boolean           @default(true) @map("is_active")
-  lastDeliveryAt DateTime?         @map("last_delivery_at") @db.Timestamp(0)
+  lastDeliveryAt DateTime?         @map("last_delivery_at") @db.DateTime(0)
   lastStatus     DeliveryStatus?   @map("last_status")
-  createdAt      DateTime          @map("created_at") @db.Timestamp(0)
-  updatedAt      DateTime          @map("updated_at") @db.Timestamp(0)
+  createdAt      DateTime          @map("created_at") @db.DateTime(0)
+  updatedAt      DateTime          @map("updated_at") @db.DateTime(0)
   deliveries     WebhookDelivery[]
 
   @@map("webhooks")
@@ -230,13 +230,13 @@ model WebhookDelivery {
   payload        Json
   status         DeliveryStatus @default(pending)
   attempts       Int            @default(0)
-  nextAttemptAt  DateTime?      @map("next_attempt_at") @db.Timestamp(0)
+  nextAttemptAt  DateTime?      @map("next_attempt_at") @db.DateTime(0)
   responseStatus Int?           @map("response_status")
   responseBody   String?        @map("response_body") @db.Text
   error          String?        @db.Text
   durationMs     Int?           @map("duration_ms")
-  createdAt      DateTime       @map("created_at") @db.Timestamp(0)
-  deliveredAt    DateTime?      @map("delivered_at") @db.Timestamp(0)
+  createdAt      DateTime       @map("created_at") @db.DateTime(0)
+  deliveredAt    DateTime?      @map("delivered_at") @db.DateTime(0)
   webhook        Webhook        @relation(fields: [webhookId], references: [id], onDelete: Cascade)
   syncRun        SyncRun?       @relation(fields: [syncRunId], references: [id], onDelete: SetNull)
 
@@ -274,11 +274,11 @@ model ZkDevice {
   /// Filled in by "Test connection"
   model        String?    @db.VarChar(100)
   firmware     String?    @db.VarChar(100)
-  lastSeenAt   DateTime?  @map("last_seen_at") @db.Timestamp(0)
+  lastSeenAt   DateTime?  @map("last_seen_at") @db.DateTime(0)
   /// ADMS: last operation-log stamp the device reported, so it doesn't re-send old users/templates
   operlogStamp String?    @map("operlog_stamp") @db.VarChar(32)
-  createdAt    DateTime   @map("created_at") @db.Timestamp(0)
-  updatedAt    DateTime   @map("updated_at") @db.Timestamp(0)
+  createdAt    DateTime   @map("created_at") @db.DateTime(0)
+  updatedAt    DateTime   @map("updated_at") @db.DateTime(0)
   commands     DeviceCommand[]
 
   @@map("zk_devices")
@@ -288,7 +288,7 @@ model ZkDevice {
 model AppSetting {
   key       String   @id @db.VarChar(64)
   value     Json
-  updatedAt DateTime @map("updated_at") @db.Timestamp(0)
+  updatedAt DateTime @map("updated_at") @db.DateTime(0)
 
   @@map("app_settings")
 }
@@ -306,8 +306,8 @@ model OrgUnit {
   code      String      @db.VarChar(50)
   name      String      @db.VarChar(100)
   parentId  Int?        @map("parent_id")
-  createdAt DateTime    @map("created_at") @db.Timestamp(0)
-  updatedAt DateTime    @map("updated_at") @db.Timestamp(0)
+  createdAt DateTime    @map("created_at") @db.DateTime(0)
+  updatedAt DateTime    @map("updated_at") @db.DateTime(0)
 
   @@unique([kind, code])
   @@index([kind])
@@ -340,21 +340,21 @@ model DeviceCommand {
   /// user_upsert, user_delete, template_upsert, enroll_fp, query_attlog, query_users, reboot, check
   kind          String         @db.VarChar(32)
   /// ADMS command text sent to push devices (without the "C:<id>:" prefix); a description for pull
-  command       String         @db.Text
+  command       String         @db.MediumText
   /// What a pull command needs to run
   payload       Json?
   empCode       String?        @map("emp_code") @db.VarChar(32)
   status        CommandStatus  @default(pending)
   attempts      Int            @default(0)
   /// Pull commands that failed to connect are retried from this time
-  nextAttemptAt DateTime?      @map("next_attempt_at") @db.Timestamp(0)
+  nextAttemptAt DateTime?      @map("next_attempt_at") @db.DateTime(0)
   /// The device's Return= code (0 = success, negative = error)
   returnCode    Int?           @map("return_code")
-  result        String?        @db.Text
+  result        String?        @db.MediumText
   createdBy     String?        @map("created_by") @db.VarChar(64)
-  createdAt     DateTime       @map("created_at") @db.Timestamp(0)
-  sentAt        DateTime?      @map("sent_at") @db.Timestamp(0)
-  completedAt   DateTime?      @map("completed_at") @db.Timestamp(0)
+  createdAt     DateTime       @map("created_at") @db.DateTime(0)
+  sentAt        DateTime?      @map("sent_at") @db.DateTime(0)
+  completedAt   DateTime?      @map("completed_at") @db.DateTime(0)
   device        ZkDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
 
   @@index([deviceId, status, id])
@@ -380,10 +380,10 @@ model BiometricTemplate {
   fields    Json
   /// Name of the template field (TMP or Tmp)
   tmpKey    String   @default("TMP") @map("tmp_key") @db.VarChar(8)
-  template  String   @db.Text
+  template  String   @db.MediumText
   sourceSn  String?  @map("source_sn") @db.VarChar(64)
-  createdAt DateTime @map("created_at") @db.Timestamp(0)
-  updatedAt DateTime @map("updated_at") @db.Timestamp(0)
+  createdAt DateTime @map("created_at") @db.DateTime(0)
+  updatedAt DateTime @map("updated_at") @db.DateTime(0)
 
   @@unique([empCode, bioType, bioIndex, subIndex])
   @@index([empCode])
