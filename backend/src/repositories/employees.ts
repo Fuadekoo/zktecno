@@ -2,6 +2,8 @@ import type { BtEmployee } from '../biotime/types.js';
 import { prisma } from '../db/prisma.js';
 import type { Employee, Prisma } from '../generated/prisma/client.js';
 import type { ZkUser } from '../zk/client.js';
+import { HttpError } from '../utils/http.js';
+import { areasRepo, departmentsRepo, positionsRepo } from './orgUnits.js';
 
 export type { Employee };
 
@@ -47,9 +49,9 @@ function toApiShape(e: Employee) {
     last_name: e.lastName,
     department: e.departmentId,
     dept_name: e.departmentName,
-    position: null,
+    position: e.positionId,
     position_name: e.positionName,
-    area: [],
+    area: Array.isArray(e.areaIds) ? (e.areaIds as number[]) : [],
     area_name: e.areaNames,
     card_no: e.cardNo,
     mobile: e.mobile,
@@ -81,14 +83,14 @@ export const employeesRepo = {
 
   /**
    * Insert or update users read from the devices (no BioTime). Matched by emp_code; new ones get
-   * negative ids so they can never collide with BioTime ids. Name and card come from the device;
-   * other fields are left as they are.
+   * negative ids so they can never collide with BioTime ids. The card comes from the device; the name
+   * too, unless it was already filled in (or edited) in the dashboard. Other fields are left as they are.
    */
   async upsertFromDevice(list: ZkUser[], syncedAt: Date) {
     const existing = new Map(
-      (await prisma.employee.findMany({ select: { id: true, empCode: true }, where: { empCode: { in: list.map((u) => u.emp_code) } } })).map(
-        (e) => [e.empCode, e.id],
-      ),
+      (
+        await prisma.employee.findMany({ select: { id: true, empCode: true, firstName: true, lastName: true }, where: { empCode: { in: list.map((u) => u.emp_code) } } })
+      ).map((e) => [e.empCode, e]),
     );
     let nextId = Math.min(0, (await prisma.employee.aggregate({ _min: { id: true } }))._min.id ?? 0) - 1;
     let created = 0;
@@ -103,8 +105,11 @@ export const employeesRepo = {
             isDeleted: false,
             syncedAt,
           };
-          const id = existing.get(u.emp_code);
-          if (id !== undefined) return prisma.employee.update({ where: { id }, data });
+          const found = existing.get(u.emp_code);
+          if (found) {
+            const keepName = Boolean(found.firstName || found.lastName);
+            return prisma.employee.update({ where: { id: found.id }, data: keepName ? { ...data, firstName: undefined } : data });
+          }
           created++;
           return prisma.employee.create({ data: { id: nextId--, ...data } });
         }),
@@ -130,6 +135,51 @@ export const employeesRepo = {
   async getLocal(id: number) {
     const e = await prisma.employee.findFirst({ where: { id, isDeleted: false } });
     return e ? toApiShape(e) : null;
+  },
+
+  /**
+   * Edit an employee in the database (BioTime off): details, department, position and areas.
+   * Names of the chosen department/position/areas are copied onto the employee for reports.
+   */
+  async updateLocal(id: number, b: Record<string, unknown>) {
+    const e = await prisma.employee.findFirst({ where: { id, isDeleted: false } });
+    if (!e) throw new HttpError(404, 'Employee not found');
+    if (b.emp_code !== undefined && b.emp_code !== e.empCode) {
+      throw new HttpError(400, 'The employee code comes from the device and can’t be changed here', { emp_code: 'Change it on the device' });
+    }
+    const data: Prisma.EmployeeUpdateInput = {};
+    const text = (v: unknown, max: number) => (v === undefined ? undefined : v === null || v === '' ? null : String(v).slice(0, max));
+    if (b.first_name !== undefined) data.firstName = text(b.first_name, 100);
+    if (b.last_name !== undefined) data.lastName = text(b.last_name, 100);
+    if (b.card_no !== undefined) data.cardNo = text(b.card_no, 32);
+    if (b.mobile !== undefined) data.mobile = text(b.mobile, 32);
+    if (b.email !== undefined) data.email = text(b.email, 128);
+    if (b.gender !== undefined) data.gender = text(b.gender, 8);
+    if (b.hire_date !== undefined) data.hireDate = text(b.hire_date, 10);
+    if (b.enable_att !== undefined) data.enableAtt = Boolean(b.enable_att);
+
+    if (b.department !== undefined) {
+      const deptId = (b.department as number | null) || null;
+      const name = deptId ? (await departmentsRepo.names([deptId])).get(deptId) : null;
+      if (deptId && !name) throw new HttpError(400, 'Department not found', { department: 'Not found' });
+      data.departmentId = deptId;
+      data.departmentName = name ?? null;
+    }
+    if (b.position !== undefined) {
+      const posId = (b.position as number | null) || null;
+      const name = posId ? (await positionsRepo.names([posId])).get(posId) : null;
+      if (posId && !name) throw new HttpError(400, 'Position not found', { position: 'Not found' });
+      data.positionId = posId;
+      data.positionName = name ?? null;
+    }
+    if (b.area !== undefined) {
+      const ids = [...new Set((b.area as number[]) ?? [])];
+      const names = await areasRepo.names(ids);
+      const valid = ids.filter((i) => names.has(i));
+      data.areaIds = valid;
+      data.areaNames = valid.map((i) => names.get(i)).join(', ').slice(0, 512) || null;
+    }
+    return toApiShape(await prisma.employee.update({ where: { id }, data }));
   },
 
   /** Employees not seen in the latest full sync no longer exist in BioTime. */

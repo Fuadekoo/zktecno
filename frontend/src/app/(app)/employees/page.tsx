@@ -7,7 +7,7 @@ import { useUser } from '@/components/user-context';
 import { api, ApiError, type FieldErrors, type Paginated } from '@/lib/api';
 import { fullName, initials } from '@/lib/format';
 import { useApi, useDebounced } from '@/lib/hooks';
-import type { Employee, OrgUnit } from '@/lib/types';
+import type { Employee, OrgUnit, SystemStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
 
@@ -74,6 +74,9 @@ export default function EmployeesPage() {
   const departments = useApi<{ data: OrgUnit[] }>('/departments/all');
   const positions = useApi<{ data: OrgUnit[] }>('/positions/all');
   const areas = useApi<{ data: OrgUnit[] }>('/areas/all');
+  // Without BioTime, employees come from the devices: they can be edited here but not added or deleted.
+  const status = useApi<SystemStatus>('/system/status');
+  const fromDevices = status.data ? !status.data.biotime.enabled : false;
 
   const [editingId, setEditingId] = useState<number | 'new' | null>(null);
   const [form, setForm] = useState<Form>(EMPTY);
@@ -172,9 +175,13 @@ export default function EmployeesPage() {
     <>
       <PageHeader
         title="Employees"
-        description="People enrolled in BioTime. New employees are pushed to the devices in their areas."
+        description={
+          fromDevices
+            ? 'People enrolled on your devices (refreshed at every sync). Enroll or remove people on the device; here you set their department, position, areas and details.'
+            : 'People enrolled in BioTime. New employees are pushed to the devices in their areas.'
+        }
         actions={
-          isAdmin && (
+          isAdmin && !fromDevices && (
           <button className="btn-primary" onClick={() => openForm('new')}>
             <Icon name="plus" className="h-4 w-4" />
             New employee
@@ -248,9 +255,11 @@ export default function EmployeesPage() {
                     <button className="btn-ghost" onClick={() => openForm(e.id)} aria-label={`Edit ${e.emp_code}`}>
                       <Icon name="edit" className="h-4 w-4" />
                     </button>
-                    <button className="btn-ghost text-red-600 hover:bg-red-50" onClick={() => setDeleting(e)} aria-label={`Delete ${e.emp_code}`}>
-                      <Icon name="trash" className="h-4 w-4" />
-                    </button>
+                    {!fromDevices && (
+                      <button className="btn-ghost text-red-600 hover:bg-red-50" onClick={() => setDeleting(e)} aria-label={`Delete ${e.emp_code}`}>
+                        <Icon name="trash" className="h-4 w-4" />
+                      </button>
+                    )}
                   </td>}
                 </tr>
               ))}
@@ -286,8 +295,8 @@ export default function EmployeesPage() {
             {formError && <Alert>{formError}</Alert>}
 
             <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Employee code *" error={fieldErrors.emp_code} hint="The ID people use on the device">
-                <input className="input" value={form.emp_code} onChange={(e) => set('emp_code', e.target.value)} required maxLength={20} pattern="[A-Za-z0-9]+" title="Letters and numbers only" />
+              <Field label="Employee code *" error={fieldErrors.emp_code} hint={fromDevices ? 'Comes from the device' : 'The ID people use on the device'}>
+                <input className="input" disabled={fromDevices && editingId !== 'new'} value={form.emp_code} onChange={(e) => set('emp_code', e.target.value)} required maxLength={20} pattern="[A-Za-z0-9]+" title="Letters and numbers only" />
               </Field>
               <Field label="First name" error={fieldErrors.first_name}>
                 <input className="input" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} maxLength={25} />

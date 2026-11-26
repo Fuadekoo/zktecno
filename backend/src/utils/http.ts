@@ -44,9 +44,10 @@ export function pickQuery(query: Record<string, unknown>, keys: readonly string[
   return out;
 }
 
+/** Record ids are non-zero integers. Negative ids are employees read from devices (see employeesRepo.upsertFromDevice). */
 export function parseId(value: unknown): number {
   const id = Number(value);
-  if (!Number.isInteger(id) || id <= 0) throw new HttpError(400, `Invalid id "${String(value)}"`);
+  if (!Number.isSafeInteger(id) || id === 0) throw new HttpError(400, `Invalid id "${String(value)}"`);
   return id;
 }
 

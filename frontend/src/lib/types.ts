@@ -161,7 +161,7 @@ export interface SyncJobState {
 }
 
 export interface SystemStatus {
-  biotime: { server: string; auth_type: string; user: string };
+  biotime: { enabled: boolean; server: string; auth_type: string; user: string };
   database: { host: string; port: number; name: string };
   /** Devices read directly with zkteco-js (ZK_DEVICES), as "ip:port" */
   direct_devices: string[];

@@ -20,7 +20,7 @@ export const systemController = {
       devicesRepo.count(),
     ]);
     res.json({
-      biotime: { server: config.biotime.baseUrl, auth_type: config.biotime.authType, user: config.biotime.username },
+      biotime: { enabled: config.biotime.enabled, server: config.biotime.baseUrl, auth_type: config.biotime.authType, user: config.biotime.username },
       database: { host: config.db.host, port: config.db.port, name: config.db.database },
       direct_devices: zk.devices().map((d) => `${d.ip}:${d.port}`),
       adms: {

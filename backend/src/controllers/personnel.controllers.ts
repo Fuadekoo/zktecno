@@ -1,5 +1,6 @@
 import { ENDPOINTS } from '../biotime/endpoints.js';
 import { employeesRepo } from '../repositories/employees.js';
+import { areasRepo, departmentsRepo, positionsRepo } from '../repositories/orgUnits.js';
 import { syncService } from '../services/sync.service.js';
 import { biotimeResourceController } from './biotimeResource.controller.js';
 
@@ -24,7 +25,12 @@ export const employeesController = biotimeResourceController({
     if (action === 'delete') await employeesRepo.markDeleted(id);
     refreshEmployees();
   },
-  local: { list: employeesRepo.listLocal, get: employeesRepo.getLocal },
+  local: {
+    list: employeesRepo.listLocal,
+    get: employeesRepo.getLocal,
+    update: employeesRepo.updateLocal,
+    readOnly: 'Employees come from your devices. Enroll the person on the device, then press “Sync now”. To remove someone, delete them on the device.',
+  },
 });
 
 export const departmentsController = biotimeResourceController({
@@ -33,6 +39,7 @@ export const departmentsController = biotimeResourceController({
   filters: ['dept_code', 'dept_name', 'parent_dept'],
   label: (r) => `department ${s(r.dept_name)} (${s(r.dept_code)})`,
   afterWrite: refreshEmployees,
+  local: departmentsRepo,
 });
 
 export const areasController = biotimeResourceController({
@@ -41,6 +48,7 @@ export const areasController = biotimeResourceController({
   filters: ['area_code', 'area_name', 'parent_area'],
   label: (r) => `area ${s(r.area_name)} (${s(r.area_code)})`,
   afterWrite: refreshEmployees,
+  local: areasRepo,
 });
 
 export const positionsController = biotimeResourceController({
@@ -49,4 +57,5 @@ export const positionsController = biotimeResourceController({
   filters: ['position_code', 'position_name', 'parent_position'],
   label: (r) => `position ${s(r.position_name)} (${s(r.position_code)})`,
   afterWrite: refreshEmployees,
+  local: positionsRepo,
 });
