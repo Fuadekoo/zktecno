@@ -5,6 +5,8 @@ import type { SyncRun } from '../generated/prisma/client.js';
 import type { Punch } from '../repositories/punches.js';
 import { runToJson } from '../repositories/syncRuns.js';
 import { webhooksRepo, type WebhookEvent } from '../repositories/webhooks.js';
+import { punchesRepo } from '../repositories/punches.js';
+import { localDate } from '../utils/http.js';
 
 /** Punches per request: large syncs are split so no single POST is huge. */
 const PUNCHES_PER_DELIVERY = 100;
@@ -54,10 +56,13 @@ class WebhookService {
     this.timer = null;
   }
 
-  /** Queue "punch.created" deliveries for every subscribed webhook. Returns deliveries created. */
-  async queuePunches(punches: Punch[], syncRunId: number | null) {
+  /**
+   * Queue "punch.created" deliveries for every subscribed webhook (or only `onlyWebhookId`, for sending
+   * past punches to one receiver). Returns deliveries created.
+   */
+  async queuePunches(punches: Punch[], syncRunId: number | null, onlyWebhookId?: number) {
     if (!punches.length) return 0;
-    const hooks = await webhooksRepo.subscribedTo('punch.created');
+    const hooks = (await webhooksRepo.subscribedTo('punch.created')).filter((h) => onlyWebhookId === undefined || h.id === onlyWebhookId);
     if (!hooks.length) return 0;
     const rows: { webhookId: number; event: string; payload: Prisma.InputJsonValue; syncRunId: number | null }[] = [];
     const total = Math.ceil(punches.length / PUNCHES_PER_DELIVERY);
@@ -75,6 +80,18 @@ class WebhookService {
     await webhooksRepo.createDeliveries(rows);
     this.kick();
     return rows.length;
+  }
+
+  /**
+   * Send punches already in the database to one webhook: today (days = 1) or the last `days` days.
+   * They go out through the normal queue, in batches, with retries.
+   */
+  async sendPastPunches(webhookId: number, days: number) {
+    const start = new Date();
+    start.setDate(start.getDate() - (Math.max(1, days) - 1));
+    const punches = await punchesRepo.since(`${localDate(start)} 00:00:00`);
+    const deliveries = await this.queuePunches(punches, null, webhookId);
+    return { punches: punches.length, deliveries };
   }
 
   /** Queue "sync.completed" / "sync.failed" for a finished punch sync run. */

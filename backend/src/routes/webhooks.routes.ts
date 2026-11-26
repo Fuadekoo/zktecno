@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { webhooksController as c } from '../controllers/webhooks.controller.js';
 import { requireAdmin } from '../middleware/auth.js';
 import { validateBody } from '../middleware/validate.js';
-import { createWebhookSchema, updateWebhookSchema } from '../validators/schemas.js';
+import { createWebhookSchema, updateWebhookSchema, sendPastPunchesSchema } from '../validators/schemas.js';
 
 /** Outgoing webhooks and their delivery log (all stored in PostgreSQL). Admin only. */
 export const webhooksRoutes = Router()
@@ -15,4 +15,5 @@ export const webhooksRoutes = Router()
   .get('/:id', c.get)
   .patch('/:id', validateBody(updateWebhookSchema), c.update)
   .delete('/:id', c.remove)
-  .post('/:id/test', c.test);
+  .post('/:id/test', c.test)
+  .post('/:id/send-past', validateBody(sendPastPunchesSchema), c.sendPast);

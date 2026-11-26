@@ -10,9 +10,9 @@ import { useApi } from '@/lib/hooks';
 import type { DeliveryStatus, WebhookDeliveryRow, WebhookEventName, WebhookRow } from '@/lib/types';
 
 const EVENTS: { value: WebhookEventName; label: string; hint: string }[] = [
-  { value: 'punch.created', label: 'New punches', hint: 'Sent after each sync with the punches that were new (up to 100 per request).' },
+  { value: 'punch.created', label: 'New punches', hint: 'Sent as punches arrive: within seconds for devices that push (ADMS), and after each sync for devices that are read. Up to 100 per request.' },
   { value: 'sync.completed', label: 'Sync completed', hint: 'A summary after every successful punch sync.' },
-  { value: 'sync.failed', label: 'Sync failed', hint: 'When BioTime could not be reached or the sync errored.' },
+  { value: 'sync.failed', label: 'Sync failed', hint: 'When a device (or BioTime) could not be reached or a sync errored.' },
 ];
 
 const STATUS_STYLE: Record<DeliveryStatus, string> = {
@@ -21,8 +21,14 @@ const STATUS_STYLE: Record<DeliveryStatus, string> = {
   failed: 'bg-red-50 text-red-700',
 };
 
-type Form = { name: string; url: string; events: WebhookEventName[]; is_active: boolean };
-const EMPTY: Form = { name: '', url: '', events: ['punch.created'], is_active: true };
+type Form = { name: string; url: string; events: WebhookEventName[]; is_active: boolean; send_days: number };
+const EMPTY: Form = { name: '', url: '', events: ['punch.created'], is_active: true, send_days: 1 };
+const PAST_OPTIONS = [
+  { days: 0, label: 'No, only new punches from now on' },
+  { days: 1, label: 'Yes, today’s punches' },
+  { days: 7, label: 'Yes, the last 7 days' },
+  { days: 30, label: 'Yes, the last 30 days' },
+];
 const PAGE = 20;
 
 export default function WebhooksPage() {
@@ -62,7 +68,7 @@ export default function WebhooksPage() {
     setEditing(h);
     setFields({});
     setFormError(null);
-    setForm(h === 'new' ? EMPTY : { name: h.name, url: h.url, events: h.events, is_active: h.is_active });
+    setForm(h === 'new' ? EMPTY : { name: h.name, url: h.url, events: h.events, is_active: h.is_active, send_days: 0 });
   }
 
   async function save(e: FormEvent) {
@@ -72,11 +78,12 @@ export default function WebhooksPage() {
     setFormError(null);
     try {
       if (editing === 'new') {
-        const created = await api<WebhookRow>('/webhooks', { method: 'POST', body: form });
+        const created = await api<WebhookRow & { past_punches: { punches: number } | null }>('/webhooks', { method: 'POST', body: form });
         setSecretView({ name: created.name, secret: created.secret });
-        toast('Webhook created');
+        toast(created.past_punches ? `Webhook created. Sending ${created.past_punches.punches} saved punch(es) now…` : 'Webhook created');
       } else if (editing) {
-        await api(`/webhooks/${editing.id}`, { method: 'PATCH', body: form });
+        const { send_days: _ignored, ...changes } = form;
+        await api(`/webhooks/${editing.id}`, { method: 'PATCH', body: changes });
         toast('Webhook updated');
       }
       setEditing(null);
@@ -108,6 +115,19 @@ export default function WebhooksPage() {
       () => api<WebhookDeliveryRow>(`/webhooks/${h.id}/test`, { method: 'POST' }),
       (d) => (d.status === 'success' ? `Test delivered (HTTP ${d.response_status})` : `Test failed: ${d.error}`),
     );
+
+  const [pastFor, setPastFor] = useState<WebhookRow | null>(null);
+  const [pastDays, setPastDays] = useState(1);
+  const sendPast = () => {
+    const h = pastFor;
+    if (!h) return;
+    setPastFor(null);
+    return run(
+      `past-${h.id}`,
+      () => api<{ punches: number; deliveries: number }>(`/webhooks/${h.id}/send-past`, { method: 'POST', body: { days: pastDays } }),
+      (r) => (r.punches ? `Sending ${r.punches} punch(es) to ${h.name} (${r.deliveries} request(s))` : 'No punches in that period'),
+    );
+  };
 
   const redeliver = (d: WebhookDeliveryRow) =>
     run(
@@ -183,7 +203,7 @@ export default function WebhooksPage() {
           empty={!hooks.data?.data.length}
           onRetry={hooks.reload}
           emptyTitle="No webhooks yet"
-          emptyHint="Add one to push new punches to another system after every sync."
+          emptyHint="Add one to send new punches to another system automatically, as they arrive."
         >
           <table className="table">
             <thead>
@@ -223,6 +243,11 @@ export default function WebhooksPage() {
                       {busy === `test-${h.id}` ? <Spinner className="h-3.5 w-3.5" /> : <Icon name="send" className="h-3.5 w-3.5" />}
                       Test
                     </button>
+                    {h.events.includes('punch.created') && (
+                      <button className="btn-ghost" onClick={() => { setPastDays(1); setPastFor(h); }} disabled={busy === `past-${h.id}` || !h.is_active} title="Send punches already saved" aria-label={`Send past punches to ${h.name}`}>
+                        {busy === `past-${h.id}` ? <Spinner className="h-4 w-4" /> : <Icon name="clock" className="h-4 w-4" />}
+                      </button>
+                    )}
                     <button className="btn-ghost" onClick={() => showSecret(h)} title="Show signing secret" aria-label={`Secret for ${h.name}`}>
                       <Icon name="shield" className="h-4 w-4" />
                     </button>
@@ -369,7 +394,43 @@ export default function WebhooksPage() {
             <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={form.is_active} onChange={(e) => setForm({ ...form, is_active: e.target.checked })} />
             Active
           </label>
+          {editing === 'new' && form.events.includes('punch.created') && (
+            <Field label="Also send punches that are already saved?" hint="New punches are always sent automatically as they arrive (live from devices, and at every sync).">
+              <select className="input" value={form.send_days} onChange={(e) => setForm({ ...form, send_days: Number(e.target.value) })}>
+                {PAST_OPTIONS.map((o) => (
+                  <option key={o.days} value={o.days}>{o.label}</option>
+                ))}
+              </select>
+            </Field>
+          )}
         </form>
+      </Modal>
+
+      {/* Send punches already saved */}
+      <Modal
+        open={Boolean(pastFor)}
+        title={`Send past punches: ${pastFor?.name ?? ''}`}
+        onClose={() => setPastFor(null)}
+        footer={
+          <>
+            <button className="btn-secondary" onClick={() => setPastFor(null)}>Cancel</button>
+            <button className="btn-primary" onClick={sendPast}>
+              <Icon name="send" className="h-4 w-4" />
+              Send
+            </button>
+          </>
+        }
+      >
+        <div className="space-y-3 text-sm text-slate-600">
+          <p>Send punches that are already saved to this webhook, for example after setting up the receiver or after it was down. They go out in batches of up to 100, with automatic retries. The receiver should ignore punch ids it already has.</p>
+          <Field label="Period">
+            <select className="input" value={pastDays} onChange={(e) => setPastDays(Number(e.target.value))}>
+              {PAST_OPTIONS.filter((o) => o.days > 0).map((o) => (
+                <option key={o.days} value={o.days}>{o.label.replace('Yes, ', '').replace(/^t/, 'T')}</option>
+              ))}
+            </select>
+          </Field>
+        </div>
       </Modal>
 
       {/* Signing secret */}

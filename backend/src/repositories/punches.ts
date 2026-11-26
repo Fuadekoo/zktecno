@@ -246,6 +246,12 @@ export const punchesRepo = {
     return rows.map(decorate);
   },
 
+  /** Punches from `from` (local "YYYY-MM-DD HH:mm:ss") onwards, oldest first. */
+  async since(from: string, limit = 50_000) {
+    const rows = await prisma.$queryRaw<RawPunch[]>`${SELECT} WHERE p.punch_time >= ${toDb(from)} ORDER BY p.punch_time, p.id LIMIT ${limit}`;
+    return rows.map(decorate);
+  },
+
   async byIds(ids: number[]) {
     if (!ids.length) return [];
     const rows = await prisma.$queryRaw<RawPunch[]>`${SELECT} WHERE p.id IN (${Prisma.join(ids)}) ORDER BY p.punch_time, p.id`;

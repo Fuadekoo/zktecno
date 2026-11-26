@@ -100,6 +100,12 @@ export const createWebhookSchema = z.object({
   url: webhookUrl,
   events: webhookEvents,
   is_active: z.boolean().default(true),
+  /** Also send punches already saved: 0 = none, 1 = today, N = last N days */
+  send_days: z.coerce.number().int().min(0).max(90).default(0),
+});
+
+export const sendPastPunchesSchema = z.object({
+  days: z.coerce.number().int().min(1, 'At least 1 day').max(90, 'At most 90 days'),
 });
 
 export const updateWebhookSchema = z

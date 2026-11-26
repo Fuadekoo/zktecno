@@ -25,10 +25,12 @@ export const webhooksController = {
   },
 
   async create(req: Request, res: Response) {
-    const body = req.body as { name: string; url: string; events: string[]; is_active: boolean };
+    const { send_days, ...body } = req.body as { name: string; url: string; events: string[]; is_active: boolean; send_days?: number };
     const hook = await webhooksRepo.create({ ...body, secret: newSecret() });
     await auditRepo.log(req, { action: 'create', entity: 'webhook', entityId: hook.id, summary: `Created webhook ${hook.name} → ${hook.url}` });
-    res.status(201).json(webhookToJson(hook, { revealSecret: true }));
+    // Optionally send punches that are already saved, so the receiver starts with recent history
+    const sent = send_days && body.is_active && body.events.includes('punch.created') ? await webhookService.sendPastPunches(hook.id, send_days) : null;
+    res.status(201).json({ ...webhookToJson(hook, { revealSecret: true }), past_punches: sent });
   },
 
   async update(req: Request, res: Response) {
@@ -55,6 +57,19 @@ export const webhooksController = {
     await findOr404(id);
     const delivery = await webhookService.sendTest(id);
     res.json(delivery ? deliveryToJson(delivery, { includePayload: true }) : null);
+  },
+
+  /** Send punches already saved (today or the last N days) to this webhook. */
+  async sendPast(req: Request, res: Response) {
+    const id = parseId(req.params.id);
+    const hook = await findOr404(id);
+    if (!hook.isActive) throw new HttpError(400, 'This webhook is paused. Turn it on first.');
+    const events = (hook.events as string[]) ?? [];
+    if (!events.includes('punch.created')) throw new HttpError(400, 'This webhook isn’t subscribed to “New punches”.');
+    const { days } = req.body as { days: number };
+    const r = await webhookService.sendPastPunches(id, days);
+    await auditRepo.log(req, { action: 'update', entity: 'webhook', entityId: id, summary: `Sent ${r.punches} past punch(es) (last ${days} day(s)) to ${hook.name}` });
+    res.json(r);
   },
 
   async deliveries(req: Request, res: Response) {

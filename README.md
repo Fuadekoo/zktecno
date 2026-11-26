@@ -346,3 +346,26 @@ npm start        # backend applies migrations, then both start
 | Receiver says the signature is wrong | Sign `timestamp + "." + rawBody` (the exact bytes received, before JSON parsing) with the current secret. After **New secret**, update the receiver. |
 | `Port 4000 is already in use` | Another copy of the backend is running. Stop it, or change `PORT`. |
 | Forgot the admin password | `cd backend && npm run user:reset-password -- admin NewPass123` |
+
+## Desktop app (Windows, Electron)
+
+The `desktop/` folder packages everything as one Windows app. Opening **ZK Attendance** starts the
+server (API, device sync and the ADMS push receiver) and shows the dashboard. The server serves the
+dashboard itself on one port. Closing the app stops the server.
+
+- **Needs PostgreSQL** installed on the PC (or reachable on the network). On first start a setup
+  screen asks for the connection, creates the database if needed, and creates the first `admin` login.
+- Connection settings are saved in `%APPDATA%\ZK Attendance\config.json` (database password encrypted
+  with Windows' key store). Logs go to `%APPDATA%\ZK Attendance\logs\server.log`.
+- Everything else (devices, ADMS, sync, BioTime) is set on the dashboard's **Settings** page.
+- Database migrations run automatically when the app starts.
+- Other PCs and phones on the network can open `http://<this PC's IP>:<port>/` while the app runs.
+
+```bash
+cd desktop
+npm install          # once
+npm run dev          # build backend + dashboard, then open the app (development)
+npm run dist         # build the installer: desktop/release/ZK Attendance Setup <version>.exe
+```
+
+Menu **App** has: open dashboard in browser, connection settings, restart server, open log folder.
