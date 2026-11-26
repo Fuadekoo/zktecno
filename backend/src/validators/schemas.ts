@@ -47,7 +47,8 @@ export const employeeSchema = z.object({
   first_name: trimmed(25).optional(),
   last_name: trimmed(25).optional(),
   nickname: trimmed(25).optional(),
-  department: z.coerce.number().int().positive('Department is required'),
+  // Required by BioTime; optional when employees are kept here (BioTime off)
+  department: nullableId.optional(),
   position: nullableId.optional(),
   area: z.array(z.coerce.number().int().positive()).optional(),
   hire_date: optionalDate.optional(),
@@ -71,6 +72,23 @@ export const employeeSchema = z.object({
   enable_holiday: z.boolean().optional(),
 });
 export const employeeUpdateSchema = employeeSchema.partial();
+
+// ---- Device commands ----
+const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
+export const deviceActionSchema = z
+  .object({
+    action: z.enum(['fetch_punches', 'fetch_users', 'send_all_employees', 'reboot', 'check']),
+    start_date: day.optional(),
+    end_date: day.optional(),
+  })
+  .refine((v) => v.action !== 'fetch_punches' || (v.start_date && v.end_date), { message: 'Pick a start and end date', path: ['start_date'] })
+  .refine((v) => !v.start_date || !v.end_date || v.start_date <= v.end_date, { message: 'The start date must be before the end date', path: ['end_date'] });
+
+export const enrollSchema = z.object({
+  device_id: z.coerce.number().int().positive('Pick a device'),
+  /** 0-9: left little finger … right little finger, as numbered on ZKTeco devices */
+  finger: z.coerce.number().int().min(0).max(9).default(6),
+});
 
 const orgUnit = (prefix: 'dept' | 'area' | 'position', parentKey: string) =>
   z.object({

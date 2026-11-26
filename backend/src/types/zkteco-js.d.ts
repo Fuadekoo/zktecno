@@ -35,5 +35,7 @@ declare module 'zkteco-js' {
     getDeviceName(): Promise<string>;
     getFirmware(): Promise<string>;
     getTime(): Promise<Date>;
+    /** Raw command; resolves with the reply minus the TCP header (first 2 bytes = reply code). */
+    executeCmd(command: number, data?: Buffer | string): Promise<Buffer>;
   }
 }

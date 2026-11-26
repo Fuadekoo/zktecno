@@ -1,6 +1,8 @@
 import { ENDPOINTS } from '../biotime/endpoints.js';
 import { employeesRepo } from '../repositories/employees.js';
 import { areasRepo, departmentsRepo, positionsRepo } from '../repositories/orgUnits.js';
+import { config } from '../config.js';
+import { deviceCommands } from '../services/deviceCommands.service.js';
 import { syncService } from '../services/sync.service.js';
 import { biotimeResourceController } from './biotimeResource.controller.js';
 
@@ -24,12 +26,20 @@ export const employeesController = biotimeResourceController({
   afterWrite: async (action, id) => {
     if (action === 'delete') await employeesRepo.markDeleted(id);
     refreshEmployees();
+    // BioTime off: this dashboard sends people to the devices itself (BioTime does it when it's on)
+    if (!config.biotime.enabled) {
+      const e = await employeesRepo.byIdAny(id);
+      if (!e) return;
+      const r = action === 'delete' ? await deviceCommands.removeEmployee(e.empCode) : await deviceCommands.pushEmployee(e, null, action === 'create');
+      if (r.skipped.length) console.warn(`[commands] ${e.empCode}: not sent to some devices: ${r.skipped.join('; ')}`);
+    }
   },
   local: {
     list: employeesRepo.listLocal,
     get: employeesRepo.getLocal,
+    create: employeesRepo.createLocal,
     update: employeesRepo.updateLocal,
-    readOnly: 'Employees come from your devices. Enroll the person on the device, then press “Sync now”. To remove someone, delete them on the device.',
+    remove: employeesRepo.removeLocal,
   },
 });
 

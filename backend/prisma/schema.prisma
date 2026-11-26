@@ -89,6 +89,12 @@ model Employee {
   gender         String?  @db.VarChar(8)
   hireDate       String?  @map("hire_date") @db.VarChar(10)
   enableAtt      Boolean  @default(true) @map("enable_att")
+  /// PIN typed on the device (sent to devices when BioTime is off)
+  devicePassword String?  @map("device_password") @db.VarChar(8)
+  /// Device role: 0 employee, 2 enroller, 6 administrator, 14 super administrator
+  devPrivilege   Int      @default(0) @map("dev_privilege") @db.SmallInt
+  /// Created in this dashboard (not read from a device): device syncs never mark it deleted
+  createdInApp   Boolean  @default(false) @map("created_in_app")
   isDeleted      Boolean  @default(false) @map("is_deleted")
   syncedAt       DateTime @map("synced_at") @db.Timestamp(0)
 
@@ -269,8 +275,11 @@ model ZkDevice {
   model        String?    @db.VarChar(100)
   firmware     String?    @db.VarChar(100)
   lastSeenAt   DateTime?  @map("last_seen_at") @db.Timestamp(0)
+  /// ADMS: last operation-log stamp the device reported, so it doesn't re-send old users/templates
+  operlogStamp String?    @map("operlog_stamp") @db.VarChar(32)
   createdAt    DateTime   @map("created_at") @db.Timestamp(0)
   updatedAt    DateTime   @map("updated_at") @db.Timestamp(0)
+  commands     DeviceCommand[]
 
   @@map("zk_devices")
 }
@@ -303,4 +312,80 @@ model OrgUnit {
   @@unique([kind, code])
   @@index([kind])
   @@map("org_units")
+}
+
+enum CommandStatus {
+  /// Waiting: push devices pick it up at their next poll, pull devices are connected to by the server
+  pending
+  /// Handed to a push device; waiting for its reply
+  sent
+  success
+  failed
+  cancelled
+}
+
+/// How a command reaches the device
+enum CommandChannel {
+  /// The device polls /iclock/getrequest (ADMS) and reports back on /iclock/devicecmd
+  push
+  /// The server connects to the device (TCP/UDP 4370)
+  pull
+}
+
+/// Work for a device: add/remove users, copy fingerprints/faces, fetch punches or users, enroll, reboot.
+model DeviceCommand {
+  id            Int            @id @default(autoincrement())
+  deviceId      Int            @map("device_id")
+  channel       CommandChannel
+  /// user_upsert, user_delete, template_upsert, enroll_fp, query_attlog, query_users, reboot, check
+  kind          String         @db.VarChar(32)
+  /// ADMS command text sent to push devices (without the "C:<id>:" prefix); a description for pull
+  command       String         @db.Text
+  /// What a pull command needs to run
+  payload       Json?
+  empCode       String?        @map("emp_code") @db.VarChar(32)
+  status        CommandStatus  @default(pending)
+  attempts      Int            @default(0)
+  /// Pull commands that failed to connect are retried from this time
+  nextAttemptAt DateTime?      @map("next_attempt_at") @db.Timestamp(0)
+  /// The device's Return= code (0 = success, negative = error)
+  returnCode    Int?           @map("return_code")
+  result        String?        @db.Text
+  createdBy     String?        @map("created_by") @db.VarChar(64)
+  createdAt     DateTime       @map("created_at") @db.Timestamp(0)
+  sentAt        DateTime?      @map("sent_at") @db.Timestamp(0)
+  completedAt   DateTime?      @map("completed_at") @db.Timestamp(0)
+  device        ZkDevice       @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+
+  @@index([deviceId, status, id])
+  @@index([empCode, id])
+  @@index([status, nextAttemptAt])
+  @@index([createdAt])
+  @@map("device_commands")
+}
+
+/// Fingerprint and face templates uploaded by devices after enrollment, copied to the other devices.
+model BiometricTemplate {
+  id        Int      @id @default(autoincrement())
+  empCode   String   @map("emp_code") @db.VarChar(32)
+  /// 1 fingerprint, 2 face (near-infrared), 8 palm, 9 face (visible light)
+  bioType   Int      @map("bio_type") @db.SmallInt
+  /// Finger number 0-9 (0 for faces)
+  bioIndex  Int      @map("bio_index") @db.SmallInt
+  /// Part number for templates stored in several parts (older faces)
+  subIndex  Int      @default(0) @map("sub_index") @db.SmallInt
+  /// Device table it came from, used to send it back the same way: FINGERTMP | FACE | BIODATA
+  format    String   @db.VarChar(16)
+  /// The record's other fields in device order, as [key, value] pairs
+  fields    Json
+  /// Name of the template field (TMP or Tmp)
+  tmpKey    String   @default("TMP") @map("tmp_key") @db.VarChar(8)
+  template  String   @db.Text
+  sourceSn  String?  @map("source_sn") @db.VarChar(64)
+  createdAt DateTime @map("created_at") @db.Timestamp(0)
+  updatedAt DateTime @map("updated_at") @db.Timestamp(0)
+
+  @@unique([empCode, bioType, bioIndex, subIndex])
+  @@index([empCode])
+  @@map("biometric_templates")
 }

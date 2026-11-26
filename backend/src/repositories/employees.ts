@@ -3,6 +3,9 @@ import { prisma } from '../db/prisma.js';
 import type { Employee, Prisma } from '../generated/prisma/client.js';
 import type { ZkUser } from '../zk/client.js';
 import { HttpError } from '../utils/http.js';
+import { dbNow } from '../db/time.js';
+import { biometricsRepo } from './biometrics.js';
+import { deviceCommandsRepo } from './deviceCommands.js';
 import { areasRepo, departmentsRepo, positionsRepo } from './orgUnits.js';
 
 export type { Employee };
@@ -59,7 +62,71 @@ function toApiShape(e: Employee) {
     gender: e.gender,
     hire_date: e.hireDate,
     enable_att: e.enableAtt,
+    device_password: e.devicePassword,
+    dev_privilege: e.devPrivilege,
+    created_in_app: e.createdInApp,
   };
+}
+
+/** Device user IDs: digits only (what every ZKTeco firmware accepts), at most 9 so older devices work too. */
+const PIN_RE = /^[0-9]{1,9}$/;
+const DEVICE_ROLES = [0, 2, 6, 14];
+
+const text = (v: unknown, max: number) => (v === undefined ? undefined : v === null || v === '' ? null : String(v).slice(0, max));
+
+/** Department/position/area fields from a form body, with their names copied for reports. */
+async function orgFields(b: Record<string, unknown>) {
+  const data: Prisma.EmployeeUpdateInput = {};
+  if (b.department !== undefined) {
+    const deptId = (b.department as number | null) || null;
+    const name = deptId ? (await departmentsRepo.names([deptId])).get(deptId) : null;
+    if (deptId && !name) throw new HttpError(400, 'Department not found', { department: 'Not found' });
+    data.departmentId = deptId;
+    data.departmentName = name ?? null;
+  }
+  if (b.position !== undefined) {
+    const posId = (b.position as number | null) || null;
+    const name = posId ? (await positionsRepo.names([posId])).get(posId) : null;
+    if (posId && !name) throw new HttpError(400, 'Position not found', { position: 'Not found' });
+    data.positionId = posId;
+    data.positionName = name ?? null;
+  }
+  if (b.area !== undefined) {
+    const ids = [...new Set((b.area as number[]) ?? [])];
+    const names = await areasRepo.names(ids);
+    const valid = ids.filter((i) => names.has(i));
+    data.areaIds = valid;
+    data.areaNames = valid.map((i) => names.get(i)).join(', ').slice(0, 512) || null;
+  }
+  return data;
+}
+
+/** Personal and device fields from a form body (undefined = not sent = unchanged). */
+function detailFields(b: Record<string, unknown>) {
+  const data: Prisma.EmployeeUpdateInput = {};
+  if (b.first_name !== undefined) data.firstName = text(b.first_name, 100);
+  if (b.last_name !== undefined) data.lastName = text(b.last_name, 100);
+  if (b.card_no !== undefined) {
+    const card = text(b.card_no, 32);
+    if (card && !/^\d{1,10}$/.test(card)) throw new HttpError(400, 'The card number must be digits only (up to 10)', { card_no: 'Digits only, up to 10' });
+    data.cardNo = card;
+  }
+  if (b.device_password !== undefined) {
+    const pw = text(b.device_password, 8);
+    if (pw && !/^\d{1,8}$/.test(pw)) throw new HttpError(400, 'The device password must be digits only (up to 8)', { device_password: 'Digits only, up to 8' });
+    data.devicePassword = pw;
+  }
+  if (b.dev_privilege !== undefined) {
+    const role = Number(b.dev_privilege);
+    if (!DEVICE_ROLES.includes(role)) throw new HttpError(400, 'Unknown device role', { dev_privilege: 'Pick a role' });
+    data.devPrivilege = role;
+  }
+  if (b.mobile !== undefined) data.mobile = text(b.mobile, 32);
+  if (b.email !== undefined) data.email = text(b.email, 128);
+  if (b.gender !== undefined) data.gender = text(b.gender, 8);
+  if (b.hire_date !== undefined) data.hireDate = text(b.hire_date, 10);
+  if (b.enable_att !== undefined) data.enableAtt = Boolean(b.enable_att);
+  return data;
 }
 
 export const employeesRepo = {
@@ -129,8 +196,53 @@ export const employeesRepo = {
       prisma.employee.count({ where }),
       prisma.employee.findMany({ where, orderBy: { empCode: 'asc' }, skip: (page - 1) * pageSize, take: pageSize }),
     ]);
-    return { count, hasNext: page * pageSize < count, hasPrevious: page > 1, data: rows.map(toApiShape) };
+    const codes = rows.map((e) => e.empCode);
+    const [bio, cmds] = await Promise.all([biometricsRepo.counts(codes), deviceCommandsRepo.latestUserCommands(codes)]);
+    const data = rows.map((e) => {
+      const latest = cmds.filter((c) => c.emp_code === e.empCode && c.kind === 'user_upsert');
+      return {
+        ...toApiShape(e),
+        biometrics: bio.get(e.empCode) ?? { fingerprints: 0, faces: 0 },
+        device_sync: latest.length
+          ? {
+              devices: latest.length,
+              done: latest.filter((c) => c.status === 'success').length,
+              pending: latest.filter((c) => c.status === 'pending' || c.status === 'sent').length,
+              failed: latest.filter((c) => c.status === 'failed').length,
+            }
+          : null,
+      };
+    });
+    return { count, hasNext: page * pageSize < count, hasPrevious: page > 1, data };
   },
+
+  /**
+   * Add a person here (BioTime off). They are then sent to every device. A deleted person with the same
+   * code is brought back instead of creating a duplicate.
+   */
+  async createLocal(b: Record<string, unknown>) {
+    const empCode = String(b.emp_code ?? '').trim();
+    if (!PIN_RE.test(empCode)) {
+      throw new HttpError(400, 'The employee code is the user ID on the device: digits only, up to 9', { emp_code: 'Digits only, up to 9 (e.g. 1001)' });
+    }
+    const existing = await prisma.employee.findFirst({ where: { empCode }, orderBy: { isDeleted: 'asc' } });
+    if (existing && !existing.isDeleted) throw new HttpError(409, `Employee code ${empCode} is already used`, { emp_code: 'Already used' });
+    const data = { ...detailFields(b), ...(await orgFields(b)), isDeleted: false, createdInApp: true, syncedAt: dbNow() };
+    if (existing) return toApiShape(await prisma.employee.update({ where: { id: existing.id }, data }));
+    const nextId = Math.min(0, (await prisma.employee.aggregate({ _min: { id: true } }))._min.id ?? 0) - 1;
+    return toApiShape(await prisma.employee.create({ data: { ...(data as Prisma.EmployeeCreateInput), id: nextId, empCode } }));
+  },
+
+  /** Delete here (BioTime off); the caller removes the person from the devices. */
+  async removeLocal(id: number) {
+    const e = await prisma.employee.findFirst({ where: { id, isDeleted: false } });
+    if (!e) throw new HttpError(404, 'Employee not found');
+    await prisma.employee.update({ where: { id }, data: { isDeleted: true } });
+    return toApiShape(e);
+  },
+
+  /** Including deleted ones (to remove a just-deleted person from devices). */
+  byIdAny: (id: number) => prisma.employee.findUnique({ where: { id } }),
 
   async getLocal(id: number) {
     const e = await prisma.employee.findFirst({ where: { id, isDeleted: false } });
@@ -147,44 +259,17 @@ export const employeesRepo = {
     if (b.emp_code !== undefined && b.emp_code !== e.empCode) {
       throw new HttpError(400, 'The employee code comes from the device and can’t be changed here', { emp_code: 'Change it on the device' });
     }
-    const data: Prisma.EmployeeUpdateInput = {};
-    const text = (v: unknown, max: number) => (v === undefined ? undefined : v === null || v === '' ? null : String(v).slice(0, max));
-    if (b.first_name !== undefined) data.firstName = text(b.first_name, 100);
-    if (b.last_name !== undefined) data.lastName = text(b.last_name, 100);
-    if (b.card_no !== undefined) data.cardNo = text(b.card_no, 32);
-    if (b.mobile !== undefined) data.mobile = text(b.mobile, 32);
-    if (b.email !== undefined) data.email = text(b.email, 128);
-    if (b.gender !== undefined) data.gender = text(b.gender, 8);
-    if (b.hire_date !== undefined) data.hireDate = text(b.hire_date, 10);
-    if (b.enable_att !== undefined) data.enableAtt = Boolean(b.enable_att);
-
-    if (b.department !== undefined) {
-      const deptId = (b.department as number | null) || null;
-      const name = deptId ? (await departmentsRepo.names([deptId])).get(deptId) : null;
-      if (deptId && !name) throw new HttpError(400, 'Department not found', { department: 'Not found' });
-      data.departmentId = deptId;
-      data.departmentName = name ?? null;
-    }
-    if (b.position !== undefined) {
-      const posId = (b.position as number | null) || null;
-      const name = posId ? (await positionsRepo.names([posId])).get(posId) : null;
-      if (posId && !name) throw new HttpError(400, 'Position not found', { position: 'Not found' });
-      data.positionId = posId;
-      data.positionName = name ?? null;
-    }
-    if (b.area !== undefined) {
-      const ids = [...new Set((b.area as number[]) ?? [])];
-      const names = await areasRepo.names(ids);
-      const valid = ids.filter((i) => names.has(i));
-      data.areaIds = valid;
-      data.areaNames = valid.map((i) => names.get(i)).join(', ').slice(0, 512) || null;
-    }
+    const data: Prisma.EmployeeUpdateInput = { ...detailFields(b), ...(await orgFields(b)) };
     return toApiShape(await prisma.employee.update({ where: { id }, data }));
   },
 
   /** Employees not seen in the latest full sync no longer exist in BioTime. */
-  async markMissingAsDeleted(syncedAt: Date) {
-    const r = await prisma.employee.updateMany({ where: { syncedAt: { lt: syncedAt }, isDeleted: false }, data: { isDeleted: true } });
+  async markMissingAsDeleted(syncedAt: Date, opts: { keepCreatedInApp?: boolean } = {}) {
+    const r = await prisma.employee.updateMany({
+      // People added in the dashboard may not have reached the devices yet (or only push devices have them)
+      where: { syncedAt: { lt: syncedAt }, isDeleted: false, ...(opts.keepCreatedInApp && { createdInApp: false }) },
+      data: { isDeleted: true },
+    });
     return r.count;
   },
 

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { dashboardRoutes, reportsRoutes, transactionsRoutes } from './attendance.routes.js';
 import { authRoutes } from './auth.routes.js';
+import { deviceControlRoutes } from './deviceControl.routes.js';
 import {
   areasRoutes,
   departmentsRoutes,
@@ -24,6 +25,7 @@ import { webhooksRoutes } from './webhooks.routes.js';
  *   /reports                daily attendance + CSV      (PostgreSQL)
  *   /employees, /departments, /areas, /positions        (BioTime live; writes = admin)
  *   /devices                device list                 (BioTime live)
+ *   /device-control         device command queue: add/remove people, fetch data, enroll (BioTime off)
  *   /system                 sync status, sync history, manual sync, audit log
  *   /webhooks               outgoing webhooks + delivery log (PostgreSQL, admin)
  *   /settings               devices, BioTime, ADMS, sync (PostgreSQL, admin)
@@ -42,6 +44,7 @@ export function apiRoutes() {
     .use('/areas', areasRoutes)
     .use('/positions', positionsRoutes)
     .use('/devices', devicesRoutes)
+    .use('/device-control', deviceControlRoutes)
     .use('/system', systemRoutes)
     .use('/settings', settingsRoutes)
     .use('/users', usersRoutes)

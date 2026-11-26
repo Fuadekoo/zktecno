@@ -107,6 +107,52 @@ async function withDevice<T>(d: ZkDeviceAddress, fn: (dev: Zkteco) => Promise<T>
   }
 }
 
+/** Protocol command and reply codes used for writing users. */
+const CMD_USER_WRQ = 8;
+const CMD_DELETE_USER = 18;
+const CMD_REFRESHDATA = 1013;
+const CMD_ACK_OK = 2000;
+
+/** A person to write to a device. */
+export interface ZkUserWrite {
+  emp_code: string;
+  name: string;
+  password?: string | null;
+  /** 0 employee, 2 enroller, 6 administrator, 14 super administrator */
+  role?: number;
+  card_no?: string | null;
+}
+
+/** Pad or cut a string to exactly `size` bytes (NUL padded). */
+function fixed(value: string, size: number) {
+  const b = Buffer.alloc(size);
+  b.write(value, 0, size, 'utf8');
+  return b;
+}
+
+async function expectAck(reply: Buffer, what: string) {
+  const code = reply?.length >= 2 ? reply.readUInt16LE(0) : -1;
+  if (code !== CMD_ACK_OK) throw new Error(`${what}: the device refused (reply code ${code})`);
+}
+
+/**
+ * The 72-byte user record of TFT/face devices:
+ * uid u16 | role u8 | password 8 | name 24 | card u32 | pad 1 | group 7 | pad 1 | user id 24
+ * (zkteco-js's own setUser writes the card as 16 bits and caps the user id at 9 characters.)
+ */
+function userRecord(uid: number, u: ZkUserWrite) {
+  const card = /^\d{1,10}$/.test(u.card_no ?? '') ? Math.min(Number(u.card_no), 0xffffffff) : 0;
+  const b = Buffer.alloc(72);
+  b.writeUInt16LE(uid, 0);
+  b.writeUInt8((u.role ?? 0) & 0xff, 2);
+  fixed(u.password ?? '', 8).copy(b, 3);
+  fixed(u.name, 24).copy(b, 11);
+  b.writeUInt32LE(card, 35);
+  fixed('1', 7).copy(b, 40);
+  fixed(u.emp_code, 24).copy(b, 48);
+  return b;
+}
+
 export const zk = {
   devices: (): ZkDeviceConfig[] => config.zk.devices,
   enabled: () => config.zk.devices.length > 0,
@@ -153,6 +199,44 @@ export const zk = {
           users.push({ emp_code: code, name: clean(u.name), card_no: u.cardno ? String(u.cardno) : null });
         }
         return users;
+      },
+      Math.max(60_000, timeoutOf(d) * 6),
+    );
+  },
+
+  /**
+   * Add or update one user on a device, matched by user ID (emp_code). An existing user keeps its
+   * internal slot (uid), so its fingerprints and face stay attached; a new user gets the next free slot.
+   */
+  upsertUser(d: ZkDeviceAddress, u: ZkUserWrite) {
+    return withDevice(
+      d,
+      async (dev) => {
+        const { data } = await dev.getUsers();
+        const existing = (data ?? []).find((x) => clean(x.userId) === u.emp_code);
+        const uid = existing?.uid ?? Math.max(0, ...(data ?? []).map((x) => x.uid)) + 1;
+        if (uid > 0xffff) throw new Error('The device has no free user slots');
+        await expectAck(await dev.executeCmd(CMD_USER_WRQ, userRecord(uid, u)), 'Writing the user');
+        await dev.executeCmd(CMD_REFRESHDATA).catch(() => {});
+        return { uid, created: !existing };
+      },
+      Math.max(60_000, timeoutOf(d) * 6),
+    );
+  },
+
+  /** Remove one user (and their fingerprints/face) from a device. Not on the device = nothing to do. */
+  deleteUser(d: ZkDeviceAddress, empCode: string) {
+    return withDevice(
+      d,
+      async (dev) => {
+        const { data } = await dev.getUsers();
+        const existing = (data ?? []).find((x) => clean(x.userId) === empCode);
+        if (!existing) return { deleted: false };
+        const buf = Buffer.alloc(2);
+        buf.writeUInt16LE(existing.uid, 0);
+        await expectAck(await dev.executeCmd(CMD_DELETE_USER, buf), 'Deleting the user');
+        await dev.executeCmd(CMD_REFRESHDATA).catch(() => {});
+        return { deleted: true };
       },
       Math.max(60_000, timeoutOf(d) * 6),
     );

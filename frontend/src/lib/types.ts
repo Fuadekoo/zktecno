@@ -57,6 +57,12 @@ export interface Employee {
   verify_mode: number | null;
   emp_type: number | null;
   enable_att: boolean;
+  /** BioTime off: added in this dashboard (not read from a device) */
+  created_in_app?: boolean;
+  /** BioTime off: saved fingerprint / face templates */
+  biometrics?: { fingerprints: number; faces: number };
+  /** BioTime off: did the latest add/update reach every device? */
+  device_sync?: { devices: number; done: number; pending: number; failed: number } | null;
   enable_overtime: boolean;
   enable_holiday: boolean;
   area: (AreaRef | number)[];
@@ -354,4 +360,89 @@ export interface SettingsResponse {
   devices: DeviceSetting[];
   network: NetworkInfo;
   unknown_push_devices: { sn: string; ip: string | null; last_seen: string }[];
+}
+
+// ---- Device control (command queue, BioTime off) ----
+export type CommandStatus = 'pending' | 'sent' | 'success' | 'failed' | 'cancelled';
+export type CommandKind = 'user_upsert' | 'user_delete' | 'template_upsert' | 'enroll_fp' | 'query_attlog' | 'query_users' | 'reboot' | 'check';
+
+export interface DeviceCommand {
+  id: number;
+  device_id: number;
+  device_name: string | null;
+  channel: 'push' | 'pull';
+  kind: CommandKind;
+  command: string;
+  emp_code: string | null;
+  status: CommandStatus;
+  attempts: number;
+  next_attempt_at: string | null;
+  return_code: number | null;
+  result: string | null;
+  created_by: string | null;
+  created_at: string;
+  sent_at: string | null;
+  completed_at: string | null;
+}
+
+export interface Capability {
+  ok: boolean;
+  via: 'push' | 'pull' | null;
+  reason: string | null;
+}
+
+export interface ControlDevice {
+  id: number;
+  name: string;
+  mode: DeviceMode;
+  ip: string | null;
+  port: number;
+  serial_number: string | null;
+  location: string | null;
+  enabled: boolean;
+  model: string | null;
+  firmware: string | null;
+  last_seen_at: string | null;
+  push: {
+    last_seen: string;
+    polling: boolean;
+    ip: string | null;
+    info: { firmware: string | null; users: number | null; fingerprints: number | null; punches: number | null; faces: number | null } | null;
+    punches_received: number;
+    users_received: number;
+    templates_received: number;
+    commands_sent: number;
+    last_error: string | null;
+  } | null;
+  pending_commands: number;
+  capabilities: Record<'users' | 'query_attlog' | 'query_users' | 'templates' | 'enroll' | 'reboot', Capability>;
+}
+
+export interface BiometricTemplate {
+  id: number;
+  emp_code: string;
+  bio_type: number;
+  label: string;
+  finger: number | null;
+  part: number;
+  format: string;
+  size: number;
+  source_sn: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface EmployeeDevices {
+  employee: { id: number; emp_code: string; name: string };
+  devices: {
+    id: number;
+    name: string;
+    mode: DeviceMode;
+    enabled: boolean;
+    serial_number: string | null;
+    status: { kind: CommandKind; status: CommandStatus; result: string | null; at: string } | null;
+    capabilities: ControlDevice['capabilities'];
+  }[];
+  templates: BiometricTemplate[];
+  commands: DeviceCommand[];
 }

@@ -6,6 +6,7 @@ import { config, warnAboutUnsafeConfig } from './config.js';
 import { connectDatabase, describeDbError, disconnectDatabase } from './db/prisma.js';
 import { syncRunsRepo } from './repositories/syncRuns.js';
 import { authService } from './services/auth.service.js';
+import { deviceCommands } from './services/deviceCommands.service.js';
 import { settingsService } from './services/settings.service.js';
 import { syncService } from './services/sync.service.js';
 import { webhookService } from './services/webhook.service.js';
@@ -51,11 +52,13 @@ async function main() {
   syncService.start();
   webhookService.start();
   adms.start();
+  deviceCommands.start();
 
   const shutdown = (signal: string) => {
     console.log(`[server] ${signal} received, shutting down`);
     syncService.stop();
     webhookService.stop();
+    deviceCommands.stop();
     void adms.stop();
     server.close(() => {
       void disconnectDatabase().finally(() => process.exit(0));

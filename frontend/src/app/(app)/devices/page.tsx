@@ -1,14 +1,22 @@
 'use client';
 
 import { useState } from 'react';
+import LocalDevices from '@/components/LocalDevices';
 import { DeviceStatus } from '@/components/badges';
 import { Icon } from '@/components/icons';
 import { Modal, PageHeader, TableState } from '@/components/ui';
 import { shortDateTime } from '@/lib/format';
 import { useApi, useDebounced } from '@/lib/hooks';
-import type { Device } from '@/lib/types';
+import type { Device, SystemStatus } from '@/lib/types';
 
+/** BioTime on: its terminal list. BioTime off: this dashboard talks to the devices itself. */
 export default function DevicesPage() {
+  const status = useApi<SystemStatus>('/system/status');
+  if (!status.data) return <TableState loading={status.loading} error={status.error} empty onRetry={status.reload}>{null}</TableState>;
+  return status.data.biotime.enabled ? <BioTimeDevices /> : <LocalDevices />;
+}
+
+function BioTimeDevices() {
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState<Device | null>(null);
   const q = useDebounced(search.trim().toLowerCase(), 200);

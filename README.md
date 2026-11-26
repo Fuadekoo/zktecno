@@ -142,7 +142,7 @@ ADMS_ENABLED=true
 ADMS_PORT=8082
 ADMS_FORWARD=true
 # The Server Address/Port the devices use NOW (write it down before changing the device). Empty = BIOTIME_URL.
-ADMS_FORWARD_URL=http://192.168.100.29:8081
+ADMS_FORWARD_URL=https://mdcr00h5-8082.inc1.devtunnels.ms/
 # Serials allowed to save punches. Empty = devices BioTime knows (from the devices sync). * = any device (for testing).
 ADMS_ALLOWED_SN=
 ```

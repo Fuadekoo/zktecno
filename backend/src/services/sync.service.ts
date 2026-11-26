@@ -212,7 +212,7 @@ class SyncService {
       if (failures.length === zk.devices().length) throw new Error(failures.join('; '));
       const list = [...byCode.values()];
       const r = await employeesRepo.upsertFromDevice(list, syncedAt);
-      const removed = failures.length ? 0 : await employeesRepo.markMissingAsDeleted(syncedAt);
+      const removed = failures.length ? 0 : await employeesRepo.markMissingAsDeleted(syncedAt, { keepCreatedInApp: true });
       this.lastEmployeeSyncAt = Date.now();
       return { fetched: list.length, ...r, removed, error: failures.length ? `Some devices failed: ${failures.join('; ')}` : null };
     });

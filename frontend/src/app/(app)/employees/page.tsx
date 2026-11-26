@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type FormEvent } from 'react';
+import { EmployeeDevicesModal } from '@/components/device-control';
 import { Icon } from '@/components/icons';
 import { Alert, ConfirmDialog, Field, Modal, PageHeader, Pagination, Spinner, TableState, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -85,6 +86,7 @@ export default function EmployeesPage() {
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [formError, setFormError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Employee | null>(null);
+  const [devicesFor, setDevicesFor] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
@@ -133,15 +135,23 @@ export default function EmployeesPage() {
     setFormError(null);
     const body = {
       ...form,
-      department: Number(form.department),
+      department: form.department ? Number(form.department) : fromDevices ? null : Number(form.department),
       position: form.position ? Number(form.position) : '',
       area: form.area.map(Number),
       dev_privilege: Number(form.dev_privilege),
     };
     try {
-      if (editingId === 'new') await api('/employees', { method: 'POST', body });
-      else await api(`/employees/${editingId}`, { method: 'PATCH', body });
-      toast(editingId === 'new' ? 'Employee created and sent to devices in the selected areas' : 'Employee updated');
+      if (editingId === 'new') {
+        const created = await api<Employee>('/employees', { method: 'POST', body });
+        if (fromDevices) {
+          toast('Employee saved and sent to your devices. Now enroll their fingerprint or face.');
+          // Straight to the enrollment steps and the delivery status
+          setDevicesFor(created.id);
+        } else toast('Employee created and sent to devices in the selected areas');
+      } else {
+        await api(`/employees/${editingId}`, { method: 'PATCH', body });
+        toast(fromDevices ? 'Employee updated and sent to your devices' : 'Employee updated');
+      }
       setEditingId(null);
       reload();
     } catch (err) {
@@ -177,11 +187,11 @@ export default function EmployeesPage() {
         title="Employees"
         description={
           fromDevices
-            ? 'People enrolled on your devices (refreshed at every sync). Enroll or remove people on the device; here you set their department, position, areas and details.'
+            ? 'Add people here and they are sent to every device; then enroll their fingerprint or face on the device. People enrolled directly on a device appear here too.'
             : 'People enrolled in BioTime. New employees are pushed to the devices in their areas.'
         }
         actions={
-          isAdmin && !fromDevices && (
+          isAdmin && (
           <button className="btn-primary" onClick={() => openForm('new')}>
             <Icon name="plus" className="h-4 w-4" />
             New employee
@@ -223,8 +233,10 @@ export default function EmployeesPage() {
                 <th>Position</th>
                 <th>Areas</th>
                 <th>Card</th>
+                {fromDevices && <th>Biometrics</th>}
+                {fromDevices && <th>On devices</th>}
                 <th>Attendance</th>
-                {isAdmin && <th className="w-24" />}
+                {(isAdmin || fromDevices) && <th className="w-32" />}
               </tr>
             </thead>
             <tbody>
@@ -246,16 +258,48 @@ export default function EmployeesPage() {
                   <td className="text-slate-600">{e.position_name || '—'}</td>
                   <td className="max-w-48 truncate text-slate-600">{areaNames(e)}</td>
                   <td className="text-slate-600">{e.card_no || '—'}</td>
+                  {fromDevices && (
+                    <td className="whitespace-nowrap text-xs text-slate-600">
+                      {e.biometrics && (e.biometrics.fingerprints || e.biometrics.faces) ? (
+                        <span className="flex items-center gap-1.5">
+                          <Icon name="fingerprint" className="h-3.5 w-3.5 text-brand-600" />
+                          {[e.biometrics.fingerprints && `${e.biometrics.fingerprints} finger${e.biometrics.fingerprints === 1 ? '' : 's'}`, e.biometrics.faces && 'face'].filter(Boolean).join(' + ')}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">Not enrolled</span>
+                      )}
+                    </td>
+                  )}
+                  {fromDevices && (
+                    <td className="whitespace-nowrap">
+                      {!e.device_sync ? (
+                        <span className="text-xs text-slate-400">—</span>
+                      ) : e.device_sync.failed ? (
+                        <span className="badge bg-red-50 text-red-700">Failed on {e.device_sync.failed}</span>
+                      ) : e.device_sync.pending ? (
+                        <span className="badge bg-amber-50 text-amber-700">Sending… {e.device_sync.done}/{e.device_sync.devices}</span>
+                      ) : (
+                        <span className="badge bg-brand-50 text-brand-700">{e.device_sync.done}/{e.device_sync.devices} devices</span>
+                      )}
+                    </td>
+                  )}
                   <td>
                     <span className={`badge ${e.enable_att !== false ? 'bg-brand-50 text-brand-700' : 'bg-slate-100 text-slate-500'}`}>
                       {e.enable_att !== false ? 'Enabled' : 'Disabled'}
                     </span>
                   </td>
-                  {isAdmin && <td className="text-right">
-                    <button className="btn-ghost" onClick={() => openForm(e.id)} aria-label={`Edit ${e.emp_code}`}>
-                      <Icon name="edit" className="h-4 w-4" />
-                    </button>
-                    {!fromDevices && (
+                  {(isAdmin || fromDevices) && <td className="whitespace-nowrap text-right">
+                    {fromDevices && (
+                      <button className="btn-ghost" onClick={() => setDevicesFor(e.id)} aria-label={`Devices and biometrics for ${e.emp_code}`} title="Devices, fingerprints & face">
+                        <Icon name="fingerprint" className="h-4 w-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
+                      <button className="btn-ghost" onClick={() => openForm(e.id)} aria-label={`Edit ${e.emp_code}`}>
+                        <Icon name="edit" className="h-4 w-4" />
+                      </button>
+                    )}
+                    {isAdmin && (
                       <button className="btn-ghost text-red-600 hover:bg-red-50" onClick={() => setDeleting(e)} aria-label={`Delete ${e.emp_code}`}>
                         <Icon name="trash" className="h-4 w-4" />
                       </button>
@@ -295,8 +339,18 @@ export default function EmployeesPage() {
             {formError && <Alert>{formError}</Alert>}
 
             <div className="grid gap-4 sm:grid-cols-3">
-              <Field label="Employee code *" error={fieldErrors.emp_code} hint={fromDevices ? 'Comes from the device' : 'The ID people use on the device'}>
-                <input className="input" disabled={fromDevices && editingId !== 'new'} value={form.emp_code} onChange={(e) => set('emp_code', e.target.value)} required maxLength={20} pattern="[A-Za-z0-9]+" title="Letters and numbers only" />
+              <Field label="Employee code *" error={fieldErrors.emp_code} hint={fromDevices ? (editingId === 'new' ? 'User ID on the device: digits, up to 9' : 'User ID on the device (can’t change)') : 'The ID people use on the device'}>
+                <input
+                  className="input"
+                  disabled={fromDevices && editingId !== 'new'}
+                  value={form.emp_code}
+                  onChange={(e) => set('emp_code', e.target.value)}
+                  required
+                  inputMode={fromDevices ? 'numeric' : undefined}
+                  maxLength={fromDevices ? 9 : 20}
+                  pattern={fromDevices ? '[0-9]+' : '[A-Za-z0-9]+'}
+                  title={fromDevices ? 'Digits only' : 'Letters and numbers only'}
+                />
               </Field>
               <Field label="First name" error={fieldErrors.first_name}>
                 <input className="input" value={form.first_name} onChange={(e) => set('first_name', e.target.value)} maxLength={25} />
@@ -305,9 +359,9 @@ export default function EmployeesPage() {
                 <input className="input" value={form.last_name} onChange={(e) => set('last_name', e.target.value)} maxLength={25} />
               </Field>
 
-              <Field label="Department *" error={fieldErrors.department}>
-                <select className="input" value={form.department} onChange={(e) => set('department', e.target.value)} required>
-                  <option value="">Select…</option>
+              <Field label={fromDevices ? 'Department' : 'Department *'} error={fieldErrors.department}>
+                <select className="input" value={form.department} onChange={(e) => set('department', e.target.value)} required={!fromDevices}>
+                  <option value="">{fromDevices ? 'None' : 'Select…'}</option>
                   {departments.data?.data.map((d) => (
                     <option key={d.id} value={d.id}>
                       {String(d.dept_name)}
@@ -347,6 +401,7 @@ export default function EmployeesPage() {
             <div>
               <p className="label">Device settings</p>
               <div className="grid gap-4 rounded-lg border border-slate-200 p-4 sm:grid-cols-3">
+                {fromDevices && <p className="text-xs text-slate-500 sm:col-span-3">Name, card, password and role are sent to every device when you save. Fingerprint and face are enrolled on the device.</p>}
                 <Field label="Card number" error={fieldErrors.card_no}>
                   <input className="input" value={form.card_no} onChange={(e) => set('card_no', e.target.value)} inputMode="numeric" maxLength={20} />
                 </Field>
@@ -370,7 +425,7 @@ export default function EmployeesPage() {
             </div>
 
             <div>
-              <p className="label">Areas (devices this person is sent to) {fieldErrors.area && <span className="text-red-600">— {fieldErrors.area}</span>}</p>
+              <p className="label">{fromDevices ? 'Areas (for reports)' : 'Areas (devices this person is sent to)'} {fieldErrors.area && <span className="text-red-600">— {fieldErrors.area}</span>}</p>
               <div className="flex flex-wrap gap-2 rounded-lg border border-slate-200 p-3">
                 {areas.data?.data.length ? (
                   areas.data.data.map((a) => {
@@ -405,13 +460,15 @@ export default function EmployeesPage() {
         title="Delete employee"
         message={
           <>
-            Delete <strong>{deleting ? fullName(deleting) || deleting.emp_code : ''}</strong> ({deleting?.emp_code}) from BioTime? This cannot be undone.
+            Delete <strong>{deleting ? fullName(deleting) || deleting.emp_code : ''}</strong> ({deleting?.emp_code}) {fromDevices ? 'and remove them, with their fingerprints and face, from every device' : 'from BioTime'}? This cannot be undone.
           </>
         }
         busy={deleteBusy}
         onConfirm={confirmDelete}
         onCancel={() => setDeleting(null)}
       />
+
+      <EmployeeDevicesModal employeeId={devicesFor} onClose={() => setDevicesFor(null)} onChanged={reload} />
     </>
   );
 }
