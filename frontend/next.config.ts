@@ -17,15 +17,25 @@ function localAddresses() {
   return [...new Set([...ips, ...extra])];
 }
 
+/**
+ * DESKTOP_BUILD=1 (npm run build:desktop): export plain HTML/JS files to ./out instead of running a
+ * Next.js server. The backend serves them on its own port (STATIC_DIR), so /api is the same origin and
+ * no proxy is needed. Every page is a client component, so nothing is lost.
+ */
+const desktop = process.env.DESKTOP_BUILD === '1';
+
 const nextConfig: NextConfig = {
+  ...(desktop && { output: 'export' as const, images: { unoptimized: true } }),
   // This folder is the app root (a package-lock.json also exists one level up for the run-both scripts).
   turbopack: { root: process.cwd() },
   allowedDevOrigins: localAddresses(),
   // The browser only talks to Next.js; /api/* is forwarded to the Express backend.
   // Same origin means the httpOnly session cookie just works, and there are no CORS issues.
-  async rewrites() {
-    return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
-  },
+  ...(!desktop && {
+    async rewrites() {
+      return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
+    },
+  }),
 };
 
 export default nextConfig;

@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev -H 0.0.0.0 -p 3000",
     "build": "next build",
-    "start": "next start -H 0.0.0.0 -p 3000"
+    "start": "next start -H 0.0.0.0 -p 3000",
+    "build:desktop": "node -e \"process.env.DESKTOP_BUILD='1'; require('child_process').execSync('next build', { stdio: 'inherit', env: process.env })\""
   },
   "dependencies": {
     "next": "^16.4.6",

@@ -73,6 +73,15 @@ const EnvSchema = z.object({
   ADMIN_PASSWORD: z.string().default('change-me-please'),
   APP_JWT_SECRET: z.string().default('dev-only-insecure-secret'),
   APP_SESSION_HOURS: num(12),
+
+  // ---- Desktop app (Electron) / single-process mode ----
+  // Folder with the exported dashboard (frontend/out). Set = the API also serves the dashboard on PORT.
+  STATIC_DIR: z.string().default(""),
+  // Apply prisma/migrations at startup without the Prisma CLI (the desktop app sets this)
+  RUN_MIGRATIONS: bool(false),
+  MIGRATIONS_DIR: z.string().default(""),
+  // Session cookie "Secure" flag. Default: on in production. Off for plain http:// on a local network.
+  COOKIE_SECURE: z.string().optional(),
 });
 
 const parsed = EnvSchema.safeParse(process.env);
@@ -159,6 +168,13 @@ export const config = {
     jwtSecret: env.APP_JWT_SECRET,
     sessionHours: env.APP_SESSION_HOURS,
     cookieName: 'zk_session',
+    cookieSecure: env.COOKIE_SECURE === undefined || env.COOKIE_SECURE === '' ? env.NODE_ENV === 'production' : ['1', 'true', 'yes', 'on'].includes(env.COOKIE_SECURE.toLowerCase()),
+  },
+
+  desktop: {
+    staticDir: env.STATIC_DIR,
+    runMigrations: env.RUN_MIGRATIONS,
+    migrationsDir: env.MIGRATIONS_DIR,
   },
 };
 

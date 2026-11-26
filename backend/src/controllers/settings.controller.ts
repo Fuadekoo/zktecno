@@ -8,6 +8,7 @@ import { settingsService, type BioTimeSettings, type SettingsSection } from '../
 import { syncService } from '../services/sync.service.js';
 import { HttpError, parseId } from '../utils/http.js';
 import { zk } from '../zk/client.js';
+import { scanNetwork } from '../zk/scan.js';
 
 const SECTION_LABEL: Record<SettingsSection, string> = { biotime: 'BioTime', adms: 'ADMS push', sync: 'Sync' };
 
@@ -91,6 +92,43 @@ export const settingsController = {
     await settingsService.reloadDevices();
     await auditRepo.log(req, { action: 'delete', entity: 'device_settings', entityId: id, summary: `Removed device ${d.name}` });
     res.status(204).end();
+  },
+
+  /**
+   * Look for devices on this PC's local networks; marks the ones already in the list.
+   * With ?stream=1 the answer is a stream of JSON lines (start, progress, device…, done), so the page
+   * can show each device the moment it is found. Closing the request stops the scan.
+   */
+  async scan(req: Request, res: Response) {
+    const saved = await zkDevicesRepo.list();
+    const mark = <T extends { ip: string; serial_number: string | null }>(d: T) => {
+      const existing = saved.find((s) => (d.serial_number && s.serialNumber === d.serial_number) || (d.ip && s.ip === d.ip));
+      return { ...d, added: existing ? { id: existing.id, name: existing.name } : null };
+    };
+
+    if (req.query.stream !== '1') {
+      const result = await scanNetwork();
+      return void res.json({ ...result, devices: result.devices.map(mark) });
+    }
+
+    const abort = new AbortController();
+    res.on('close', () => abort.abort());
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('X-Accel-Buffering', 'no');
+    const send = (o: object) => !res.writableEnded && res.write(JSON.stringify(o) + '\n');
+    try {
+      const result = await scanNetwork({
+        signal: abort.signal,
+        onStart: (info) => send({ type: 'start', ...info }),
+        onProgress: (done, total) => send({ type: 'progress', done, total }),
+        onDevice: (d) => send({ type: 'device', device: mark(d) }),
+      });
+      send({ type: 'done', scanned: result.scanned, ms: result.ms, count: result.devices.length, stopped: abort.signal.aborted });
+    } catch (err) {
+      send({ type: 'error', message: (err as Error).message });
+    }
+    res.end();
   },
 
   /** Test a device from the form before saving. Returns what it reports (serial, model, firmware, counts). */

@@ -20,7 +20,7 @@ export function cookieOptions(): CookieOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',
-    secure: config.isProduction,
+    secure: config.app.cookieSecure,
     path: '/',
     maxAge: config.app.sessionHours * 60 * 60 * 1000,
   };

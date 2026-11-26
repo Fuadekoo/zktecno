@@ -3,6 +3,7 @@ import { adms } from './adms/server.js';
 import { createApp } from './app.js';
 import { biotime } from './biotime/client.js';
 import { config, warnAboutUnsafeConfig } from './config.js';
+import { runMigrations } from './db/migrate.js';
 import { connectDatabase, describeDbError, disconnectDatabase } from './db/prisma.js';
 import { syncRunsRepo } from './repositories/syncRuns.js';
 import { authService } from './services/auth.service.js';
@@ -16,6 +17,8 @@ async function main() {
 
   // 1. Database (tables are created by `prisma migrate deploy`, which `npm run dev/start` runs first)
   try {
+    // Desktop app: apply migrations here (development uses `prisma migrate deploy` instead)
+    if (config.desktop.runMigrations) await runMigrations(config.desktop.migrationsDir);
     await connectDatabase();
     await syncRunsRepo.closeInterrupted();
     await authService.seedAdminIfEmpty();
@@ -30,12 +33,15 @@ async function main() {
   // 2. HTTP API
   const server = createApp().listen(config.port, config.host, () => {
     console.log(`[server] API listening on http://localhost:${config.port}/api`);
+    if (config.desktop.staticDir) console.log(`[server] Dashboard on http://localhost:${config.port}/`);
+    process.send?.({ type: 'ready', port: config.port });
     if (config.host === '0.0.0.0') {
       const ips = Object.values(os.networkInterfaces())
         .flat()
         .filter((i) => i && i.family === 'IPv4' && !i.internal)
         .map((i) => i!.address);
-      for (const ip of ips) console.log(`[server] On your network: dashboard http://${ip}:3000  ·  API http://${ip}:${config.port}/api`);
+      const dashPort = config.desktop.staticDir ? config.port : 3000;
+      for (const ip of ips) console.log(`[server] On your network: dashboard http://${ip}:${dashPort}  ·  API http://${ip}:${config.port}/api`);
     }
     if (config.biotime.enabled) console.log(`[server] BioTime: ${config.biotime.baseUrl} (auth: ${config.biotime.authType}, user: ${config.biotime.username})`);
   });
@@ -67,6 +73,12 @@ async function main() {
   };
   process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('SIGTERM', () => shutdown('SIGTERM'));
+  // Desktop app: Windows has no real SIGTERM for child processes, so it asks over the IPC channel
+  process.on('message', (m: unknown) => {
+    if ((m as { type?: string } | null)?.type === 'shutdown') shutdown('desktop app');
+  });
+  // ...and if the desktop app itself goes away (crash, killed), don't keep running on our own
+  process.on('disconnect', () => shutdown('desktop app closed'));
 }
 
 main().catch((err) => {
