@@ -379,6 +379,10 @@ export const adms = {
   start(): Server | null {
     if (current) return current;
     if (!config.adms.enabled) return null;
+    if (config.adms.port === config.port) {
+      console.error(`[adms] The push port (${config.adms.port}) is the same as the API port (PORT=${config.port}). Not starting ADMS: pick another port in Settings > Push (ADMS).`);
+      return null;
+    }
     const self = pointsAtThisPort(config.biotime.baseUrl);
     if (self) console.warn(`[adms] WARNING: The BioTime address (${config.biotime.baseUrl}) is this server's ADMS push port. BioTime sync will fail: set the real BioTime address in Settings > BioTime.`);
     if (config.adms.forward && pointsAtThisPort(config.adms.forwardUrl)) {
