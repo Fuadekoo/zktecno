@@ -9,6 +9,7 @@ import { api, ApiError, type FieldErrors, type Paginated } from '@/lib/api';
 import { fullName, initials } from '@/lib/format';
 import { useApi, useDebounced } from '@/lib/hooks';
 import { useLiveRefresh } from '@/components/realtime';
+import { FetchUsersModal } from '@/components/fetch-users';
 import type { Employee, OrgUnit, SystemStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -90,6 +91,7 @@ export default function EmployeesPage() {
   const [deleting, setDeleting] = useState<Employee | null>(null);
   const [devicesFor, setDevicesFor] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
+  const [fetchOpen, setFetchOpen] = useState(false);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -194,13 +196,22 @@ export default function EmployeesPage() {
         }
         actions={
           isAdmin && (
-          <button className="btn-primary" onClick={() => openForm('new')}>
-            <Icon name="plus" className="h-4 w-4" />
-            New employee
-          </button>
+            <>
+              {fromDevices && (
+                <button className="btn-secondary" onClick={() => setFetchOpen(true)} title="Read the people enrolled on your devices into this list">
+                  <Icon name="download" className="h-4 w-4" />
+                  Fetch from device
+                </button>
+              )}
+              <button className="btn-primary" onClick={() => openForm('new')}>
+                <Icon name="plus" className="h-4 w-4" />
+                New employee
+              </button>
+            </>
           )
         }
       />
+      <FetchUsersModal open={fetchOpen} onClose={() => setFetchOpen(false)} />
 
       <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-3">
         <label>

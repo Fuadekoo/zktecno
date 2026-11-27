@@ -9,6 +9,7 @@
  *   device    { sn, ip, at }                          a device pushed to this server (at most every 15 s per device)
  *   employees { count, source }                       employees added/changed from a device upload
  *   sync      { job, status }                         a sync run finished
+ *   commands  { device_id, ids, status, result? }     device commands sent / finished (pending = retry later)
  */
 import type { Server as HttpServer } from 'node:http';
 import { Server } from 'socket.io';
@@ -58,7 +59,7 @@ export const realtime = {
     console.log('[realtime] Live updates on /socket.io');
   },
 
-  emit(event: 'punches' | 'device' | 'employees' | 'sync', payload: object) {
+  emit(event: 'punches' | 'device' | 'employees' | 'sync' | 'commands', payload: object) {
     io?.to('users').emit(event, payload);
   },
 

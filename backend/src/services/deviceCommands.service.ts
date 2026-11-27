@@ -22,6 +22,7 @@ import { zkDevicesRepo, type ZkDevice } from '../repositories/zkDevices.js';
 import { HttpError } from '../utils/http.js';
 import { zk, type ZkDeviceAddress } from '../zk/client.js';
 import { syncService } from './sync.service.js';
+import { realtime } from '../realtime.js';
 import { webhookService } from './webhook.service.js';
 
 /** What can only travel over ADMS (zkteco-js can't write templates or start enrollment). */
@@ -295,6 +296,7 @@ class DeviceCommandService {
     const d = (await zkDevicesRepo.list()).find((x) => x.serialNumber === sn && x.enabled && x.mode !== 'pull');
     if (!d) return [];
     const rows = await deviceCommandsRepo.nextPush(d.id);
+    if (rows.length) realtime.emit('commands', { device_id: d.id, ids: rows.map((r) => r.id), status: 'sent' });
     return rows.map((r) => `C:${r.id}:${r.command}`);
   }
 
@@ -310,7 +312,10 @@ class DeviceCommandService {
       const ret = Number(q.get('Return'));
       if (!Number.isInteger(id) || !Number.isFinite(ret)) continue;
       const result = ret >= 0 ? `Done (${q.get('CMD') ?? 'command'}, return ${ret})` : `The device returned error ${ret} (${q.get('CMD') ?? 'command'})`;
-      if (await deviceCommandsRepo.complete(id, d.id, ret, result)) n++;
+      if (await deviceCommandsRepo.complete(id, d.id, ret, result)) {
+        n++;
+        realtime.emit('commands', { device_id: d.id, ids: [id], status: ret >= 0 ? 'success' : 'failed', result });
+      }
     }
     return n;
   }
@@ -380,13 +385,15 @@ class DeviceCommandService {
         case 'query_users': {
           const users = await zk.readUsers(address(d));
           const r = await employeesRepo.upsertFromDevice(users, dbNow());
-          result = `${users.length} users on the device, ${r.created} new`;
+          realtime.emit('employees', { count: users.length, source: d.serialNumber ?? d.name });
+          result =`${users.length} users on the device, ${r.created} new`;
           break;
         }
         default:
           throw Object.assign(new Error(`${KIND_LABEL[c.kind as CommandKind] ?? c.kind} can’t run over the network`), { permanent: true });
       }
       await deviceCommandsRepo.finish(c.id, true, result, attempts);
+      realtime.emit('commands', { device_id: d.id, ids: [c.id], status: 'success', result });
       await zkDevicesRepo.markSeen(d.id, {}).catch(() => {});
       console.log(`[commands] #${c.id} ${d.name}: ${result}`);
     } catch (err) {
@@ -394,10 +401,12 @@ class DeviceCommandService {
       const wait = RETRY_MINUTES[attempts - 1];
       if ((err as { permanent?: boolean }).permanent || wait === undefined) {
         await deviceCommandsRepo.finish(c.id, false, message, attempts);
+        realtime.emit('commands', { device_id: d.id, ids: [c.id], status: 'failed', result: message });
         console.warn(`[commands] #${c.id} ${d.name} failed: ${message}`);
       } else {
         await deviceCommandsRepo.retryLater(c.id, attempts, toDbFromInstant(new Date(Date.now() + wait * 60_000)), `${message} (retrying in ${wait} min)`);
         console.warn(`[commands] #${c.id} ${d.name}: ${message}; retrying in ${wait} min`);
+        realtime.emit('commands', { device_id: d.id, ids: [c.id], status: 'pending', result: `${message} (retrying in ${wait} min)` });
       }
     }
   }
