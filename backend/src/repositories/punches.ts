@@ -303,7 +303,7 @@ export const punchesRepo = {
         GROUP_CONCAT(DISTINCT COALESCE(p.terminal_alias, p.terminal_sn) SEPARATOR ', ') AS terminals
       FROM punches p
       WHERE p.punch_time BETWEEN ${toDb(from)} AND ${toDb(to)} ${extra}
-      GROUP BY p.emp_code, DATE(p.punch_time)`;
+      GROUP BY 1, 2`; // group by the selected emp_code and date: MySQL's ONLY_FULL_GROUP_BY rejects DATE(...) here
     return rows.map((r) => ({ ...r, punch_count: num(r.punch_count) }));
   },
 

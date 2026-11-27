@@ -17,6 +17,7 @@ const NAV: { href: string; label: string; icon: IconName; adminOnly?: boolean }[
   { href: '/positions', label: 'Positions', icon: 'badge' },
   { href: '/areas', label: 'Areas', icon: 'map' },
   { href: '/devices', label: 'Devices', icon: 'device' },
+  { href: '/nearby', label: 'Nearby Devices', icon: 'radar', adminOnly: true },
   { href: '/system', label: 'Sync & Activity', icon: 'refresh' },
   { href: '/webhooks', label: 'Webhooks', icon: 'send', adminOnly: true },
   { href: '/users', label: 'Users', icon: 'shield', adminOnly: true },
