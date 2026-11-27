@@ -7,6 +7,8 @@ import type { ZkPunch } from '../zk/client.js';
 export interface PunchFilters {
   empCode?: string;
   terminalSn?: string;
+  /** Device punch states: '0' Check In, '1' Check Out, '2' Break Out, '3' Break In, '4'/'5' Overtime In/Out */
+  punchStates?: string[];
   departmentId?: number;
   search?: string;
   from?: string; // YYYY-MM-DD HH:mm:ss (wall clock)
@@ -78,6 +80,7 @@ function where(f: PunchFilters) {
   if (f.to) parts.push(Prisma.sql`p.punch_time <= ${toDb(f.to)}`);
   if (f.empCode) parts.push(Prisma.sql`p.emp_code = ${f.empCode}`);
   if (f.terminalSn) parts.push(Prisma.sql`p.terminal_sn = ${f.terminalSn}`);
+  if (f.punchStates?.length) parts.push(Prisma.sql`p.punch_state IN (${Prisma.join(f.punchStates)})`);
   if (f.departmentId) parts.push(Prisma.sql`e.department_id = ${f.departmentId}`);
   if (f.search) {
     const like = `%${f.search.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
@@ -305,6 +308,20 @@ export const punchesRepo = {
       WHERE p.punch_time BETWEEN ${toDb(from)} AND ${toDb(to)} ${extra}
       GROUP BY 1, 2`; // group by the selected emp_code and date: MySQL's ONLY_FULL_GROUP_BY rejects DATE(...) here
     return rows.map((r) => ({ ...r, punch_count: num(r.punch_count) }));
+  },
+
+  /** First and last punch time (HH:mm:ss) and count per employee per day, for the analytics page. */
+  async firstLastByDay(from: string, to: string) {
+    const rows = await prisma.$queryRaw<{ emp_code: string; date: string; first_in: string; last_out: string; n: bigint }[]>`
+      SELECT p.emp_code,
+        DATE_FORMAT(p.punch_time, '%Y-%m-%d') AS date,
+        DATE_FORMAT(MIN(p.punch_time), '%H:%i:%s') AS first_in,
+        DATE_FORMAT(MAX(p.punch_time), '%H:%i:%s') AS last_out,
+        COUNT(*) AS n
+      FROM punches p
+      WHERE p.punch_time BETWEEN ${toDb(from)} AND ${toDb(to)}
+      GROUP BY 1, 2`;
+    return rows.map((r) => ({ ...r, n: num(r.n) }));
   },
 
   async stats() {

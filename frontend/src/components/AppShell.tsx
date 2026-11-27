@@ -1,46 +1,116 @@
 'use client';
 
+import {
+  Activity,
+  BadgeCheck,
+  Building2,
+  ChevronsUpDown,
+  Clock,
+  Cpu,
+  FileBarChart,
+  KeyRound,
+  LayoutDashboard,
+  LogOut,
+  MapPin,
+  Radar,
+  Send,
+  Settings,
+  ShieldCheck,
+  Users,
+  type LucideIcon,
+} from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Separator } from '@/components/ui/separator';
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarInset,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { api, ApiError, type FieldErrors } from '@/lib/api';
-import { Icon, type IconName } from './icons';
 import { LiveBadge, RealtimeProvider } from './realtime';
 import { Alert, Field, Modal, Spinner, ToastProvider, useToast } from './ui';
 import { UserContext, type CurrentUser } from './user-context';
 
-const NAV: { href: string; label: string; icon: IconName; adminOnly?: boolean }[] = [
-  { href: '/', label: 'Dashboard', icon: 'dashboard' },
-  { href: '/transactions', label: 'Punch Logs', icon: 'clock' },
-  { href: '/reports', label: 'Attendance Report', icon: 'report' },
-  { href: '/employees', label: 'Employees', icon: 'users' },
-  { href: '/departments', label: 'Departments', icon: 'building' },
-  { href: '/positions', label: 'Positions', icon: 'badge' },
-  { href: '/areas', label: 'Areas', icon: 'map' },
-  { href: '/devices', label: 'Devices', icon: 'device' },
-  { href: '/nearby', label: 'Nearby Devices', icon: 'radar', adminOnly: true },
-  { href: '/system', label: 'Sync & Activity', icon: 'refresh' },
-  { href: '/webhooks', label: 'Webhooks', icon: 'send', adminOnly: true },
-  { href: '/users', label: 'Users', icon: 'shield', adminOnly: true },
-  { href: '/settings', label: 'Settings', icon: 'settings', adminOnly: true },
+type NavItem = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean };
+
+const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+  {
+    label: 'Attendance',
+    items: [
+      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
+      { href: '/transactions', label: 'Punch Logs', icon: Clock },
+      { href: '/reports', label: 'Attendance Report', icon: FileBarChart },
+    ],
+  },
+  {
+    label: 'People',
+    items: [
+      { href: '/employees', label: 'Employees', icon: Users },
+      { href: '/departments', label: 'Departments', icon: Building2 },
+      { href: '/positions', label: 'Positions', icon: BadgeCheck },
+      { href: '/areas', label: 'Areas', icon: MapPin },
+    ],
+  },
+  {
+    label: 'Devices',
+    items: [
+      { href: '/devices', label: 'Devices', icon: Cpu },
+      { href: '/nearby', label: 'Nearby Devices', icon: Radar, adminOnly: true },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { href: '/system', label: 'Sync & Activity', icon: Activity },
+      { href: '/webhooks', label: 'Webhooks', icon: Send, adminOnly: true },
+      { href: '/users', label: 'Users', icon: ShieldCheck, adminOnly: true },
+      { href: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
+    ],
+  },
 ];
+
+const SIDEBAR_KEY = 'sidebar-open';
+
+const isActivePath = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [menuOpen, setMenuOpen] = useState(false);
   const [passwordOpen, setPasswordOpen] = useState(false);
+  // Open/closed is remembered on this computer
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   useEffect(() => {
     api<{ user: CurrentUser }>('/auth/me')
       .then((r) => setUser(r.user))
       .catch(() => router.replace(`/login?next=${encodeURIComponent(pathname)}`));
+    setSidebarOpen(localStorage.getItem(SIDEBAR_KEY) !== 'false');
     // Only check once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => setMenuOpen(false), [pathname]);
+  function changeSidebar(open: boolean) {
+    setSidebarOpen(open);
+    localStorage.setItem(SIDEBAR_KEY, String(open));
+  }
 
   async function logout() {
     await api('/auth/logout', { method: 'POST' }).catch(() => {});
@@ -55,65 +125,131 @@ export default function AppShell({ children }: { children: ReactNode }) {
     );
   }
 
-  const isActive = (href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
-  const nav = NAV.filter((n) => !n.adminOnly || user.role === 'admin');
+  const current = NAV_GROUPS.flatMap((g) => g.items).find((i) => isActivePath(pathname, i.href));
 
   return (
     <UserContext.Provider value={user}>
       <ToastProvider>
         <RealtimeProvider>
-        <div className="min-h-screen lg:pl-64">
-          <aside
-            className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform lg:translate-x-0 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
-          >
-            <div className="flex h-16 items-center gap-2.5 border-b border-slate-200 px-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">ZK</div>
-              <div>
-                <p className="text-sm font-semibold leading-tight text-slate-900">Attendance</p>
-                <LiveBadge />
-              </div>
-            </div>
-            <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
-              {nav.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition ${
-                    isActive(item.href) ? 'bg-brand-50 text-brand-700' : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <Icon name={item.icon} className="h-[18px] w-[18px]" />
-                  {item.label}
-                </Link>
-              ))}
-            </nav>
-            <div className="border-t border-slate-200 p-3">
-              <div className="flex items-center justify-between gap-2 rounded-lg px-3 py-2">
-                <button className="min-w-0 text-left" onClick={() => setPasswordOpen(true)} title="Change password">
-                  <p className="truncate text-sm font-medium text-slate-700">{user.full_name || user.username}</p>
-                  <p className="text-xs capitalize text-slate-500">{user.role}</p>
-                </button>
-                <button className="btn-ghost" onClick={logout} title="Sign out" aria-label="Sign out">
-                  <Icon name="logout" className="h-4 w-4" />
-                </button>
-              </div>
-            </div>
-          </aside>
-          {menuOpen && <div className="fixed inset-0 z-30 bg-slate-900/30 lg:hidden" onClick={() => setMenuOpen(false)} />}
-
-          <header className="sticky top-0 z-20 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
-            <button className="btn-ghost" onClick={() => setMenuOpen(true)} aria-label="Open menu">
-              <Icon name="menu" />
-            </button>
-            <span className="font-semibold">Attendance</span>
-          </header>
-
-          <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
-        </div>
-        <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
+          <TooltipProvider delayDuration={0}>
+            <SidebarProvider open={sidebarOpen} onOpenChange={changeSidebar}>
+              <AppSidebar user={user} pathname={pathname} onChangePassword={() => setPasswordOpen(true)} onLogout={logout} />
+              <SidebarInset className="min-w-0 bg-slate-50">
+                <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white/90 px-4 backdrop-blur">
+                  <SidebarTrigger className="-ml-1" title="Show / hide the menu (Ctrl+B)" />
+                  <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+                  <span className="truncate text-sm font-medium text-slate-700">{current?.label ?? 'Attendance'}</span>
+                  <div className="ml-auto">
+                    <LiveBadge />
+                  </div>
+                </header>
+                <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+              </SidebarInset>
+            </SidebarProvider>
+          </TooltipProvider>
+          <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
         </RealtimeProvider>
       </ToastProvider>
     </UserContext.Provider>
+  );
+}
+
+function AppSidebar({ user, pathname, onChangePassword, onLogout }: { user: CurrentUser; pathname: string; onChangePassword: () => void; onLogout: () => void }) {
+  const { setOpenMobile, isMobile } = useSidebar();
+  // On phones the menu is a drawer: close it after choosing a page
+  useEffect(() => {
+    if (isMobile) setOpenMobile(false);
+  }, [pathname, isMobile, setOpenMobile]);
+
+  const name = user.full_name || user.username;
+  const initials = name
+    .split(/\s+/)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton size="lg" asChild tooltip="Dashboard">
+              <Link href="/">
+                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">ZK</div>
+                <div className="grid flex-1 text-left leading-tight">
+                  <span className="truncate text-sm font-semibold text-slate-900">Attendance</span>
+                  <span className="truncate text-xs text-slate-500">ZKTeco devices</span>
+                </div>
+              </Link>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarHeader>
+
+      <SidebarContent>
+        {NAV_GROUPS.map((group) => {
+          const items = group.items.filter((i) => !i.adminOnly || user.role === 'admin');
+          if (!items.length) return null;
+          return (
+            <SidebarGroup key={group.label}>
+              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {items.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={isActivePath(pathname, item.href)} tooltip={item.label}>
+                        <Link href={item.href}>
+                          <item.icon />
+                          <span>{item.label}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
+      </SidebarContent>
+
+      <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent" tooltip={name}>
+                  <Avatar className="size-8 rounded-lg">
+                    <AvatarFallback className="rounded-lg bg-brand-100 text-xs font-semibold text-brand-700">{initials}</AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left leading-tight">
+                    <span className="truncate text-sm font-medium">{name}</span>
+                    <span className="truncate text-xs capitalize text-slate-500">{user.role}</span>
+                  </div>
+                  <ChevronsUpDown className="ml-auto size-4" />
+                </SidebarMenuButton>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent side={isMobile ? 'bottom' : 'right'} align="end" sideOffset={4} className="min-w-56">
+                <DropdownMenuLabel className="font-normal">
+                  <div className="text-sm font-medium">{name}</div>
+                  <div className="text-xs capitalize text-slate-500">{user.role}</div>
+                </DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onSelect={onChangePassword}>
+                  <KeyRound />
+                  Change password
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={onLogout}>
+                  <LogOut />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </SidebarMenuItem>
+        </SidebarMenu>
+      </SidebarFooter>
+      <SidebarRail />
+    </Sidebar>
   );
 }
 

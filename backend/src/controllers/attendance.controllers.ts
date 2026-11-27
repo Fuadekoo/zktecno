@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { punchesRepo, type Punch, type PunchFilters } from '../repositories/punches.js';
 import { buildDailyReport, minutesAsHours, type DailyReportParams, type DailyRow } from '../services/attendance.service.js';
+import { buildAnalytics } from '../services/analytics.service.js';
 import { getDashboard } from '../services/dashboard.service.js';
 import { HttpError, pagination, sendCsv, str, toCsv, toDateTime } from '../utils/http.js';
 
@@ -9,6 +10,11 @@ function punchFilters(q: Request['query']): PunchFilters {
   return {
     empCode: str(q.emp_code),
     terminalSn: str(q.terminal_sn),
+    // punch_state=0 or punch_state=2,3 (several at once); only small numbers are valid states
+    punchStates: (str(q.punch_state) ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter((s) => /^\d{1,3}$/.test(s)),
     search: str(q.search),
     departmentId: Number.isInteger(dept) && dept > 0 ? dept : undefined,
     from: toDateTime(str(q.start_time)),
@@ -30,6 +36,21 @@ function reportParams(q: Request['query']): DailyReportParams {
 export const dashboardController = {
   async get(_req: Request, res: Response) {
     res.json(await getDashboard());
+  },
+
+  /** Organisation analytics: ?start_date&end_date&work_start=08:30&grace=10&department=3 */
+  async analytics(req: Request, res: Response) {
+    const dept = Number(str(req.query.department));
+    const grace = Number(str(req.query.grace));
+    res.json(
+      await buildAnalytics({
+        startDate: str(req.query.start_date),
+        endDate: str(req.query.end_date),
+        workStart: str(req.query.work_start),
+        graceMinutes: Number.isFinite(grace) ? grace : 0,
+        departmentId: Number.isInteger(dept) && dept > 0 ? dept : undefined,
+      }),
+    );
   },
 };
 

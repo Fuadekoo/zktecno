@@ -12,10 +12,23 @@ import type { Device, OrgUnit, Transaction } from '@/lib/types';
 
 const PAGE_SIZE = 25;
 
+/** Device punch states (value = what the device sends; several values = comma-separated). */
+const STATES: { value: string; label: string }[] = [
+  { value: '0', label: 'Check In' },
+  { value: '1', label: 'Check Out' },
+  { value: '2', label: 'Break Out' },
+  { value: '3', label: 'Break In' },
+  { value: '2,3', label: 'Breaks (out + in)' },
+  { value: '4', label: 'Overtime In' },
+  { value: '5', label: 'Overtime Out' },
+  { value: '4,5', label: 'Overtime (in + out)' },
+];
+
 export default function TransactionsPage() {
   const toast = useToast();
   const [empCode, setEmpCode] = useState('');
   const [terminal, setTerminal] = useState('');
+  const [state, setState] = useState('');
   const [department, setDepartment] = useState('');
   const [start, setStart] = useState(todayISO());
   const [end, setEnd] = useState(todayISO());
@@ -23,7 +36,7 @@ export default function TransactionsPage() {
   const [exporting, setExporting] = useState(false);
   const debouncedEmp = useDebounced(empCode.trim());
 
-  const filters = { search: debouncedEmp, department, terminal_sn: terminal, start_time: start, end_time: end };
+  const filters = { search: debouncedEmp, department, terminal_sn: terminal, punch_state: state, start_time: start, end_time: end };
   const { data, error, loading, reload, refresh } = useApi<Paginated<Transaction>>('/transactions', { ...filters, page, page_size: PAGE_SIZE });
   useLiveRefresh('punches', refresh);
   // Highlight punches that just arrived
@@ -72,7 +85,7 @@ export default function TransactionsPage() {
         }
       />
 
-      <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-6">
+      <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-4">
         <label>
           <span className="label">Employee</span>
           <input className="input" placeholder="Code or name" value={empCode} onChange={(e) => update(() => setEmpCode(e.target.value))} />
@@ -95,6 +108,17 @@ export default function TransactionsPage() {
             {devices.data?.data.map((d) => (
               <option key={d.id} value={d.sn}>
                 {d.alias || d.sn}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
+          <span className="label">State</span>
+          <select className="input" value={state} onChange={(e) => update(() => setState(e.target.value))}>
+            <option value="">All states</option>
+            {STATES.map((s) => (
+              <option key={s.value} value={s.value}>
+                {s.label}
               </option>
             ))}
           </select>

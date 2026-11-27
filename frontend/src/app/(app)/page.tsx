@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { useEffect } from 'react';
+import { OrganizationAnalytics } from '@/components/analytics';
 import { DeviceStatus, PunchBadge } from '@/components/badges';
 import { Icon } from '@/components/icons';
 import { useLiveRefresh } from '@/components/realtime';
@@ -147,6 +148,8 @@ export default function DashboardPage() {
           </div>
         </>
       )}
+
+      <OrganizationAnalytics />
     </>
   );
 }
