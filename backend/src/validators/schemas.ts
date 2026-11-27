@@ -39,6 +39,11 @@ export const changePasswordSchema = z.object({
   new_password: password,
 });
 
+/** A signed-in user editing their own profile. */
+export const profileSchema = z.object({
+  full_name: trimmed(100),
+});
+
 // ---- BioTime personnel ----
 export const employeeSchema = z.object({
   emp_code: trimmed(20)

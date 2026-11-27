@@ -10,6 +10,8 @@ import { fullName, initials } from '@/lib/format';
 import { useApi, useDebounced } from '@/lib/hooks';
 import { useLiveRefresh } from '@/components/realtime';
 import { FetchUsersModal } from '@/components/fetch-users';
+import { EmployeeImportModal } from '@/components/employee-import';
+import { FileSpreadsheet } from 'lucide-react';
 import type { Employee, OrgUnit, SystemStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -92,6 +94,7 @@ export default function EmployeesPage() {
   const [devicesFor, setDevicesFor] = useState<number | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [fetchOpen, setFetchOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }));
 
@@ -197,6 +200,10 @@ export default function EmployeesPage() {
         actions={
           isAdmin && (
             <>
+              <button className="btn-secondary" onClick={() => setImportOpen(true)} title="Add or update many employees at once from an Excel file">
+                <FileSpreadsheet className="h-4 w-4" />
+                Import from Excel
+              </button>
               {fromDevices && (
                 <button className="btn-secondary" onClick={() => setFetchOpen(true)} title="Read the people enrolled on your devices into this list">
                   <Icon name="download" className="h-4 w-4" />
@@ -212,6 +219,7 @@ export default function EmployeesPage() {
         }
       />
       <FetchUsersModal open={fetchOpen} onClose={() => setFetchOpen(false)} />
+      <EmployeeImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={reload} departmentRequired={!fromDevices} />
 
       <div className="card mb-4 grid gap-3 p-4 sm:grid-cols-3">
         <label>

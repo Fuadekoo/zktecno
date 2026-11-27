@@ -34,6 +34,15 @@ export const authController = {
     res.json({ user: toPublic(user!) });
   },
 
+  /** Edit your own profile (display name). Role and active state stay admin-only (Users page). */
+  async updateMe(req: Request, res: Response) {
+    const { full_name } = req.body as { full_name: string };
+    await usersRepo.update(req.user!.id, { full_name: full_name || null });
+    const user = (await usersRepo.findById(req.user!.id))!;
+    await auditRepo.log(req, { action: 'update', entity: 'user', entityId: req.user!.id, summary: 'Updated own profile' });
+    res.json({ user: toPublic(user) });
+  },
+
   async changePassword(req: Request, res: Response) {
     const { current_password, new_password } = req.body as { current_password: string; new_password: string };
     await authService.changePassword(req.user!.id, current_password, new_password);

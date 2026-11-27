@@ -13,7 +13,8 @@
   --color-brand-500: #4caf3a;
   --color-brand-600: #3d9430;
   --color-brand-700: #317726;
-  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  /* Ethiopic fonts for Amharic (Windows: Nyala/Ebrima; Android/Linux: Noto Sans Ethiopic) */
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, 'Noto Sans Ethiopic', Nyala, Ebrima, 'Abyssinica SIL', sans-serif;
 }
 
 @layer base {
@@ -169,36 +170,94 @@
   --status-critical: #dc3c3d;
 }
 
+/*
+ * Dark theme. The shadcn tokens get dark values, and the slate/brand/status scales that the older pages use
+ * are re-stepped for a dark surface, so every page follows the theme without rewriting its classes.
+ * Chart colours: dark steps validated against the dark surface (#191919), not an automatic flip.
+ */
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  color-scheme: dark;
+  --background: #0f0f10;
+  --foreground: #f4f4f5;
+  --card: #191919;
+  --card-foreground: #f4f4f5;
+  --popover: #1f1f22;
+  --popover-foreground: #f4f4f5;
+  --primary: #4caf3a;
+  --primary-foreground: #ffffff;
+  --secondary: #26262a;
+  --secondary-foreground: #f4f4f5;
+  --muted: #26262a;
+  --muted-foreground: #a1a1aa;
+  --accent: #26262a;
+  --accent-foreground: #f4f4f5;
+  --destructive: #eb6263;
+  --border: #2e2e33;
+  --input: #3a3a3f;
+  --ring: #67c254;
+  --chart-1: #338ced;
+  --chart-2: #e76624;
+  --chart-3: #00a888;
+  --chart-4: #d28e05;
+  --chart-5: #e24d8b;
+  --status-good: #00a888;
+  --status-warning: #d28e05;
+  --status-critical: #e24d8b;
+  --sidebar: #141416;
+  --sidebar-foreground: #d4d4d8;
+  --sidebar-primary: #4caf3a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #1c2e1a;
+  --sidebar-accent-foreground: #9be08d;
+  --sidebar-border: #26262a;
+  --sidebar-ring: #67c254;
+
+  /* Grey scale used by the older pages, re-stepped for dark */
+  --color-slate-50: #141416;
+  --color-slate-100: #1f1f22;
+  --color-slate-200: #2e2e33;
+  --color-slate-300: #3a3a3f;
+  --color-slate-400: #71717a;
+  --color-slate-500: #9b9ba3;
+  --color-slate-600: #b8b8bf;
+  --color-slate-700: #d4d4d8;
+  --color-slate-800: #e4e4e7;
+  --color-slate-900: #f4f4f5;
+  --color-slate-950: #fafafa;
+  --color-brand-50: #15261a;
+  --color-brand-100: #1c3a22;
+  --color-brand-200: #285430;
+  --color-brand-300: #3d7a3a;
+  --color-brand-700: #8bd27c;
+  --color-brand-800: #a9e09d;
+  --color-brand-900: #c6ecbe;
+  --color-red-50: #2a1416;
+  --color-red-200: #5c2629;
+  --color-red-600: #f07a7a;
+  --color-red-700: #f29a9a;
+  --color-amber-50: #2a2112;
+  --color-amber-100: #3a2c12;
+  --color-amber-700: #f2c65c;
+  --color-amber-800: #f5d27a;
+  --color-sky-50: #10222f;
+  --color-green-50: #10261a;
+  --color-sky-700: #8ccbf2;
+  --color-green-700: #5fd36f;
+  --color-orange-100: #3a2414;
+  --color-orange-800: #f4a774;
+}
+/* White surfaces of the older pages follow the theme (white text on buttons stays white) */
+.dark .bg-white,
+.dark .card {
+  background-color: var(--card);
+}
+.dark .bg-white\/90 {
+  background-color: color-mix(in oklab, var(--card) 90%, transparent);
+}
+.dark .live-new > td {
+  animation-name: live-new-dark;
+}
+@keyframes live-new-dark {
+  0% { background-color: #1c3a22; }
+  100% { background-color: transparent; }
 }

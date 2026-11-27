@@ -21,6 +21,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useLiveRefresh } from '@/components/realtime';
 import { daysAgoISO, todayISO } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
+import { useI18n, type TKey } from '@/lib/i18n';
 import type { OrgUnit } from '@/lib/types';
 
 // ---------------------------------------------------------------- data
@@ -68,24 +69,40 @@ const RANGES = [
 ];
 const PREFS_KEY = 'analytics-prefs';
 
-const STATUS_CONFIG = {
-  on_time: { label: 'On time', color: 'var(--status-good)' },
-  late: { label: 'Late', color: 'var(--status-warning)' },
-  absent: { label: 'Absent', color: 'var(--status-critical)' },
-} satisfies ChartConfig;
+type T = (key: TKey, vars?: Record<string, string | number>) => string;
 
-const RATE_CONFIG = { rate: { label: 'Attendance rate', color: 'var(--chart-1)' } } satisfies ChartConfig;
-const ARRIVAL_CONFIG = {
-  count: { label: 'Arrivals', color: 'var(--chart-1)' },
-  late: { label: 'After start time', color: 'var(--status-warning)' },
-} satisfies ChartConfig;
+const statusConfig = (t: T) =>
+  ({
+    on_time: { label: t('an.status.onTime'), color: 'var(--status-good)' },
+    late: { label: t('an.status.late'), color: 'var(--status-warning)' },
+    absent: { label: t('an.status.absent'), color: 'var(--status-critical)' },
+  }) satisfies ChartConfig;
+const rateConfig = (t: T) => ({ rate: { label: t('an.kpi.rate'), color: 'var(--chart-1)' } }) satisfies ChartConfig;
+const arrivalConfig = (t: T) =>
+  ({
+    count: { label: t('an.arrivalsCount'), color: 'var(--chart-1)' },
+    late: { label: t('an.afterStart'), color: 'var(--status-warning)' },
+  }) satisfies ChartConfig;
 
-const shortDate = (d: string) => new Date(`${d}T00:00:00`).toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+/** Short date in the chosen language (e.g. 27 Nov). */
+function useShortDate() {
+  const { locale } = useI18n();
+  return (d: string) => {
+    try {
+      return new Date(`${d}T00:00:00`).toLocaleDateString(locale, { day: 'numeric', month: 'short' });
+    } catch {
+      return d.slice(5);
+    }
+  };
+}
+const dayKey = (w: string) => `day.${w}` as TKey;
 const hours = (m: number | null) => (m === null ? '—' : `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`);
 
 // ---------------------------------------------------------------- page section
 
 export function OrganizationAnalytics() {
+  const { t } = useI18n();
+  const shortDate = useShortDate();
   const [days, setDays] = useState('30');
   const [department, setDepartment] = useState('all');
   const [workStart, setWorkStart] = useState('08:30');
@@ -122,30 +139,30 @@ export function OrganizationAnalytics() {
       <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 id="analytics-title" className="text-lg font-semibold text-slate-900">
-            Organization analytics
+            {t('an.title')}
           </h2>
           <p className="text-sm text-slate-500">
             {data
-              ? `${shortDate(data.range.start_date)} – ${shortDate(data.range.end_date)} · ${data.summary.working_days} working days · ${data.summary.employees} employees`
-              : 'Attendance patterns across your organization'}
+              ? t('an.rangeInfo', { from: shortDate(data.range.start_date), to: shortDate(data.range.end_date), days: data.summary.working_days, people: data.summary.employees })
+              : t('an.subtitle')}
           </p>
         </div>
 
         {/* Filters: one row above the charts */}
         <div className="flex flex-wrap items-end gap-2">
-          <ToggleGroup type="single" variant="outline" value={days} onValueChange={(v) => v && setDays(v)} aria-label="Period">
+          <ToggleGroup type="single" variant="outline" value={days} onValueChange={(v) => v && setDays(v)} aria-label={t('an.title')}>
             {RANGES.map((r) => (
               <ToggleGroupItem key={r.value} value={r.value} className="px-3 text-xs">
-                {r.label}
+                {t('an.days', { n: r.value })}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
           <Select value={department} onValueChange={setDepartment}>
-            <SelectTrigger className="w-44 bg-white" aria-label="Department">
-              <SelectValue placeholder="All departments" />
+            <SelectTrigger className="w-44 bg-white" aria-label={t('an.department')}>
+              <SelectValue placeholder={t('an.allDepartments')} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">All departments</SelectItem>
+              <SelectItem value="all">{t('an.allDepartments')}</SelectItem>
               {departments.data?.data.map((d) => (
                 <SelectItem key={d.id} value={String(d.id)}>
                   {String(d.dept_name)}
@@ -153,21 +170,21 @@ export function OrganizationAnalytics() {
               ))}
             </SelectContent>
           </Select>
-          <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Punching after this time (plus grace) counts as late">
-            Work starts
+          <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title={t('an.workStartsTip')}>
+            {t('an.workStarts')}
             <input type="time" className="w-[5.5rem] bg-transparent text-sm text-slate-900 outline-none" value={workStart} onChange={(e) => setWorkStart(e.target.value)} />
           </label>
-          <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title="Minutes allowed after the start time before a punch counts as late">
-            Grace
+          <label className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2 py-1 text-xs text-slate-600" title={t('an.graceTip')}>
+            {t('an.grace')}
             <input type="number" min={0} max={240} className="w-10 bg-transparent text-sm text-slate-900 outline-none" value={grace} onChange={(e) => setGrace(e.target.value)} />
-            min
+            {t('an.min')}
           </label>
         </div>
       </div>
 
       {error && !data ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-red-600">Could not load analytics: {error}</CardContent>
+          <CardContent className="py-8 text-center text-sm text-red-600">{t('an.loadFailed', { error })}</CardContent>
         </Card>
       ) : !data ? (
         <AnalyticsSkeleton />
@@ -175,8 +192,8 @@ export function OrganizationAnalytics() {
         <Card>
           <CardContent className="py-12 text-center">
             <CalendarX2 className="mx-auto size-8 text-slate-400" />
-            <p className="mt-3 font-medium text-slate-700">No attendance in this period yet</p>
-            <p className="mt-1 text-sm text-slate-500">Charts appear once employees start punching.</p>
+            <p className="mt-3 font-medium text-slate-700">{t('an.noData')}</p>
+            <p className="mt-1 text-sm text-slate-500">{t('an.noDataSub')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -189,37 +206,37 @@ export function OrganizationAnalytics() {
           </div>
           <div className="grid gap-6 xl:grid-cols-3">
             <Leaderboard
-              title="Most absent"
-              description="Working days with no punch"
+              title={t('an.mostAbsent')}
+              description={t('an.mostAbsentSub')}
               icon={<UserX className="size-4 text-red-600" />}
               people={data.most_absent}
-              empty="Nobody was absent. 🎉"
-              metric={(p) => `${p.absent_days} day${p.absent_days === 1 ? '' : 's'}`}
+              empty={t('an.mostAbsentEmpty')}
+              metric={(p) => (p.absent_days === 1 ? t('an.dayN') : t('an.daysN', { n: p.absent_days }))}
               bar={(p) => (p.expected_days ? (p.absent_days / p.expected_days) * 100 : 0)}
               barClass="[&>div]:bg-status-critical"
-              sub={(p) => `${p.attendance_rate}% attendance${p.last_seen ? ` · last seen ${shortDate(p.last_seen)}` : ' · not seen'}`}
+              sub={(p) => `${t('an.attendancePct', { rate: p.attendance_rate })} · ${p.last_seen ? t('an.lastSeen', { date: shortDate(p.last_seen) }) : t('an.notSeen')}`}
             />
             <Leaderboard
-              title="Most late"
-              description={`First punch after ${data.range.work_start}${data.range.grace_minutes ? ` + ${data.range.grace_minutes} min` : ''}`}
+              title={t('an.mostLate')}
+              description={t('an.mostLateSub', { time: `${data.range.work_start}${data.range.grace_minutes ? ` + ${data.range.grace_minutes} ${t('an.min')}` : ''}` })}
               icon={<AlertTriangle className="size-4 text-amber-600" />}
               people={data.most_late}
-              empty="Nobody was late. 🎉"
-              metric={(p) => `${p.late_days} day${p.late_days === 1 ? '' : 's'}`}
+              empty={t('an.mostLateEmpty')}
+              metric={(p) => (p.late_days === 1 ? t('an.dayN') : t('an.daysN', { n: p.late_days }))}
               bar={(p) => (p.present_days ? (p.late_days / p.present_days) * 100 : 0)}
               barClass="[&>div]:bg-status-warning"
-              sub={(p) => `Usually arrives ${p.avg_first_in ?? '—'}`}
+              sub={(p) => t('an.usuallyArrives', { time: p.avg_first_in ?? '—' })}
             />
             <Leaderboard
-              title="Most regular"
-              description="Best attendance, fewest late days"
+              title={t('an.mostRegular')}
+              description={t('an.mostRegularSub')}
               icon={<Trophy className="size-4 text-brand-700" />}
               people={data.most_regular}
-              empty="No attendance yet."
+              empty={t('an.mostRegularEmpty')}
               metric={(p) => `${p.attendance_rate}%`}
               bar={(p) => p.attendance_rate}
               barClass="[&>div]:bg-status-good"
-              sub={(p) => `Arrives ${p.avg_first_in ?? '—'} · ${p.late_days ? `${p.late_days} late` : 'never late'} · works ${hours(p.avg_worked_minutes)}`}
+              sub={(p) => `${t('an.arrives', { time: p.avg_first_in ?? '—' })} · ${p.late_days ? t('an.lateN', { n: p.late_days }) : t('an.neverLate')} · ${t('an.works', { hours: hours(p.avg_worked_minutes) })}`}
               medal
             />
           </div>
@@ -251,13 +268,14 @@ function Kpi({ label, value, sub, icon, children }: { label: string; value: Reac
 }
 
 function Kpis({ a }: { a: Analytics }) {
+  const { t } = useI18n();
   const s = a.summary;
   const trend = s.attendance_trend;
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-      <Kpi label="Attendance rate" value={`${s.attendance_rate}%`} icon={<CalendarCheck className="size-3.5" />}>
+      <Kpi label={t('an.kpi.rate')} value={`${s.attendance_rate}%`} icon={<CalendarCheck className="size-3.5" />}>
         {trend === null ? (
-          'Present on working days'
+          t('an.kpi.rateSub')
         ) : (
           <span className="inline-flex items-center gap-1">
             {trend >= 0 ? <TrendingUp className="size-3.5 text-green-700" /> : <TrendingDown className="size-3.5 text-red-600" />}
@@ -265,15 +283,15 @@ function Kpis({ a }: { a: Analytics }) {
               {trend >= 0 ? '+' : ''}
               {trend} pts
             </span>
-            vs first half
+            {t('an.kpi.vsFirstHalf')}
           </span>
         )}
       </Kpi>
-      <Kpi label="On time" value={`${s.punctuality_rate}%`} sub="of days present" icon={<Timer className="size-3.5" />} />
-      <Kpi label="Average arrival" value={s.avg_first_in ?? '—'} sub={`Work starts ${a.range.work_start}`} icon={<Clock3 className="size-3.5" />} />
-      <Kpi label="Late arrivals" value={s.late_arrivals} sub="person-days" icon={<AlertTriangle className="size-3.5" />} />
-      <Kpi label="Absences" value={s.absences} sub="person-days" icon={<UserX className="size-3.5" />} />
-      <Kpi label="Perfect attendance" value={s.perfect_attendance} sub="never absent or late" icon={<Medal className="size-3.5" />} />
+      <Kpi label={t('an.kpi.onTime')} value={`${s.punctuality_rate}%`} sub={t('an.kpi.onTimeSub')} icon={<Timer className="size-3.5" />} />
+      <Kpi label={t('an.kpi.avgArrival')} value={s.avg_first_in ?? '—'} sub={t('an.kpi.workStartsAt', { time: a.range.work_start })} icon={<Clock3 className="size-3.5" />} />
+      <Kpi label={t('an.kpi.late')} value={s.late_arrivals} sub={t('an.kpi.personDays')} icon={<AlertTriangle className="size-3.5" />} />
+      <Kpi label={t('an.kpi.absences')} value={s.absences} sub={t('an.kpi.personDays')} icon={<UserX className="size-3.5" />} />
+      <Kpi label={t('an.kpi.perfect')} value={s.perfect_attendance} sub={t('an.kpi.perfectSub')} icon={<Medal className="size-3.5" />} />
     </div>
   );
 }
@@ -281,21 +299,23 @@ function Kpis({ a }: { a: Analytics }) {
 // ---------------------------------------------------------------- charts
 
 function DailyAttendance({ a }: { a: Analytics }) {
-  const rows = useMemo(() => a.daily.map((d) => ({ ...d, label: shortDate(d.date) })), [a.daily]);
+  const { t } = useI18n();
+  const shortDate = useShortDate();
+  const rows = useMemo(() => a.daily.map((d) => ({ ...d, label: shortDate(d.date), day: t(dayKey(d.weekday)) })), [a.daily, shortDate, t]);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Daily attendance</CardTitle>
-        <CardDescription>On time, late and absent employees each working day</CardDescription>
+        <CardTitle>{t('an.daily')}</CardTitle>
+        <CardDescription>{t('an.dailySub')}</CardDescription>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="chart">
           <TabsList className="mb-3">
-            <TabsTrigger value="chart">Chart</TabsTrigger>
-            <TabsTrigger value="table">Table</TabsTrigger>
+            <TabsTrigger value="chart">{t('an.chart')}</TabsTrigger>
+            <TabsTrigger value="table">{t('an.table')}</TabsTrigger>
           </TabsList>
           <TabsContent value="chart">
-            <ChartContainer config={STATUS_CONFIG} className="aspect-auto h-72 w-full">
+            <ChartContainer config={statusConfig(t)} className="aspect-auto h-72 w-full">
               <BarChart data={rows} margin={{ left: -16, right: 8 }} barCategoryGap="18%">
                 <CartesianGrid vertical={false} strokeDasharray="3 3" />
                 <XAxis dataKey="label" tickLine={false} axisLine={false} minTickGap={16} tickMargin={8} />
@@ -306,7 +326,7 @@ function DailyAttendance({ a }: { a: Analytics }) {
                     <ChartTooltipContent
                       labelFormatter={(_, p) => {
                         const d = p?.[0]?.payload as (typeof rows)[number] | undefined;
-                        return d ? `${d.weekday} ${d.label} · ${d.rate}% present` : '';
+                        return d ? `${d.day} ${d.label} · ${t('an.present', { rate: d.rate })}` : '';
                       }}
                     />
                   }
@@ -323,19 +343,19 @@ function DailyAttendance({ a }: { a: Analytics }) {
               <table className="table">
                 <thead className="sticky top-0">
                   <tr>
-                    <th>Date</th>
-                    <th className="text-right">Expected</th>
-                    <th className="text-right">On time</th>
-                    <th className="text-right">Late</th>
-                    <th className="text-right">Absent</th>
-                    <th className="text-right">Attendance</th>
+                    <th>{t('an.col.date')}</th>
+                    <th className="text-right">{t('an.col.expected')}</th>
+                    <th className="text-right">{t('an.status.onTime')}</th>
+                    <th className="text-right">{t('an.status.late')}</th>
+                    <th className="text-right">{t('an.status.absent')}</th>
+                    <th className="text-right">{t('an.col.attendance')}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {[...rows].reverse().map((d) => (
                     <tr key={d.date}>
                       <td>
-                        {d.weekday} {d.label}
+                        {d.day} {d.label}
                       </td>
                       <td className="text-right tabular-nums">{d.expected}</td>
                       <td className="text-right tabular-nums">{d.on_time}</td>
@@ -355,16 +375,20 @@ function DailyAttendance({ a }: { a: Analytics }) {
 }
 
 function ArrivalTimes({ a }: { a: Analytics }) {
+  const { t } = useI18n();
   const startSlot = a.range.work_start;
   const peak = a.arrival_times.reduce((m, x) => (x.count > m.count ? x : m), { slot: '', count: 0, late: false });
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Arrival times</CardTitle>
-        <CardDescription>First punch of the day, in 30-minute slots{peak.count ? ` · busiest ${peak.slot}` : ''}</CardDescription>
+        <CardTitle>{t('an.arrivals')}</CardTitle>
+        <CardDescription>
+          {t('an.arrivalsSub')}
+          {peak.count ? ` · ${t('an.busiest', { slot: peak.slot })}` : ''}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={ARRIVAL_CONFIG} className="aspect-auto h-64 w-full">
+        <ChartContainer config={arrivalConfig(t)} className="aspect-auto h-64 w-full">
           <BarChart data={a.arrival_times} margin={{ left: -16, right: 8 }} barCategoryGap="12%">
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
             <XAxis dataKey="slot" tickLine={false} axisLine={false} minTickGap={12} tickMargin={8} />
@@ -376,12 +400,12 @@ function ArrivalTimes({ a }: { a: Analytics }) {
                   hideIndicator
                   labelFormatter={(_, p) => {
                     const d = p?.[0]?.payload as Analytics['arrival_times'][number] | undefined;
-                    return d ? `${d.slot}${d.late ? ' · after start time' : ''}` : '';
+                    return d ? `${d.slot}${d.late ? ` · ${t('an.afterStart')}` : ''}` : '';
                   }}
                 />
               }
             />
-            <ReferenceLine x={a.arrival_times.find((s) => s.slot >= startSlot)?.slot} stroke="var(--muted-foreground)" strokeDasharray="4 4" label={{ value: `Start ${startSlot}`, position: 'top', fontSize: 11, fill: 'var(--muted-foreground)' }} />
+            <ReferenceLine x={a.arrival_times.find((s) => s.slot >= startSlot)?.slot} stroke="var(--muted-foreground)" strokeDasharray="4 4" label={{ value: t('an.start', { time: startSlot }), position: 'top', fontSize: 11, fill: 'var(--muted-foreground)' }} />
             <Bar dataKey="count" radius={[4, 4, 0, 0]} name="count">
               {a.arrival_times.map((s) => (
                 <Cell key={s.slot} fill={s.late ? 'var(--color-late)' : 'var(--color-count)'} />
@@ -392,11 +416,11 @@ function ArrivalTimes({ a }: { a: Analytics }) {
         <div className="mt-2 flex items-center justify-center gap-4 text-xs text-slate-600">
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: 'var(--chart-1)' }} />
-            Before start time
+            {t('an.beforeStart')}
           </span>
           <span className="flex items-center gap-1.5">
             <span className="size-2.5 rounded-sm" style={{ background: 'var(--status-warning)' }} />
-            After start time
+            {t('an.afterStart')}
           </span>
         </div>
       </CardContent>
@@ -405,19 +429,23 @@ function ArrivalTimes({ a }: { a: Analytics }) {
 }
 
 function Weekdays({ a }: { a: Analytics }) {
-  const rows = a.weekdays.map((w) => ({ ...w, rate: w.rate ?? 0 }));
+  const { t } = useI18n();
+  const rows = a.weekdays.map((w) => ({ ...w, rate: w.rate ?? 0, day: t(dayKey(w.weekday)) }));
   const worst = rows.reduce((m, x) => (m === null || x.rate < m.rate ? x : m), null as (typeof rows)[number] | null);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Attendance by weekday</CardTitle>
-        <CardDescription>Average share of employees present{worst && rows.length > 1 ? ` · lowest on ${worst.weekday}` : ''}</CardDescription>
+        <CardTitle>{t('an.weekday')}</CardTitle>
+        <CardDescription>
+          {t('an.weekdaySub')}
+          {worst && rows.length > 1 ? ` · ${t('an.lowestOn', { day: worst.day })}` : ''}
+        </CardDescription>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={RATE_CONFIG} className="aspect-auto h-64 w-full">
+        <ChartContainer config={rateConfig(t)} className="aspect-auto h-64 w-full">
           <BarChart data={rows} margin={{ left: -16, right: 8 }} barCategoryGap="28%">
             <CartesianGrid vertical={false} strokeDasharray="3 3" />
-            <XAxis dataKey="weekday" tickLine={false} axisLine={false} tickMargin={8} />
+            <XAxis dataKey="day" tickLine={false} axisLine={false} tickMargin={8} />
             <YAxis tickLine={false} axisLine={false} domain={[0, 100]} tickFormatter={(v) => `${v}%`} width={44} />
             <ChartTooltip
               cursor={{ fillOpacity: 0.4 }}
@@ -425,11 +453,7 @@ function Weekdays({ a }: { a: Analytics }) {
                 <ChartTooltipContent
                   formatter={(v, _n, item) => {
                     const d = item.payload as (typeof rows)[number];
-                    return (
-                      <span>
-                        <span className="font-medium tabular-nums">{String(v)}%</span> present · {d.late} late · {d.days} day{d.days === 1 ? '' : 's'}
-                      </span>
-                    );
+                    return <span className="tabular-nums">{t('an.weekdayTip', { rate: String(v), late: d.late, days: d.days })}</span>;
                   }}
                 />
               }
@@ -443,18 +467,19 @@ function Weekdays({ a }: { a: Analytics }) {
 }
 
 function Departments({ a }: { a: Analytics }) {
+  const { t } = useI18n();
   const rows = a.departments.slice(0, 12);
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Departments</CardTitle>
-        <CardDescription>Attendance rate per department, best first</CardDescription>
+        <CardTitle>{t('an.departments')}</CardTitle>
+        <CardDescription>{t('an.departmentsSub')}</CardDescription>
         <CardAction>
-          <Badge variant="outline">{a.departments.length} departments</Badge>
+          <Badge variant="outline">{t('an.departmentsCount', { n: a.departments.length })}</Badge>
         </CardAction>
       </CardHeader>
       <CardContent>
-        <ChartContainer config={RATE_CONFIG} className="aspect-auto w-full" style={{ height: Math.max(160, rows.length * 36 + 24) }}>
+        <ChartContainer config={rateConfig(t)} className="aspect-auto w-full" style={{ height: Math.max(160, rows.length * 36 + 24) }}>
           <BarChart data={rows} layout="vertical" margin={{ left: 8, right: 40 }} barCategoryGap="24%">
             <CartesianGrid horizontal={false} strokeDasharray="3 3" />
             <XAxis type="number" domain={[0, 100]} tickFormatter={(v) => `${v}%`} tickLine={false} axisLine={false} />
@@ -465,11 +490,7 @@ function Departments({ a }: { a: Analytics }) {
                 <ChartTooltipContent
                   formatter={(v, _n, item) => {
                     const d = item.payload as (typeof rows)[number];
-                    return (
-                      <span>
-                        <span className="font-medium tabular-nums">{String(v)}%</span> present · {d.late_rate}% late · {d.employees} people · {d.absent_days} absences
-                      </span>
-                    );
+                    return <span className="tabular-nums">{t('an.deptTip', { rate: String(v), late: d.late_rate, people: d.employees, absent: d.absent_days })}</span>;
                   }}
                 />
               }

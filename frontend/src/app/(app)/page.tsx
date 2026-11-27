@@ -6,6 +6,7 @@ import { OrganizationAnalytics } from '@/components/analytics';
 import { DeviceStatus, PunchBadge } from '@/components/badges';
 import { Icon } from '@/components/icons';
 import { useLiveRefresh } from '@/components/realtime';
+import { useI18n } from '@/lib/i18n';
 import { SyncButton } from '@/components/SyncButton';
 import { Alert, EmptyState, PageHeader, Spinner, StatCard } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -18,6 +19,7 @@ const REFRESH_MS = 60_000;
 
 export default function DashboardPage() {
   const { isAdmin } = useUser();
+  const { t, locale } = useI18n();
   const { data, error, loading, reload, refresh } = useApi<Dashboard>('/dashboard');
   useLiveRefresh(['punches', 'device', 'sync'], refresh);
 
@@ -29,13 +31,13 @@ export default function DashboardPage() {
   return (
     <>
       <PageHeader
-        title="Dashboard"
-        description={data ? `Today, ${new Date(`${data.date}T00:00:00`).toLocaleDateString(undefined, { dateStyle: 'full' })}` : 'Attendance overview'}
+        title={t('dash.title')}
+        description={data ? t('dash.today', { date: new Date(`${data.date}T00:00:00`).toLocaleDateString(locale, { dateStyle: 'full' }) }) : t('dash.overview')}
         actions={
           <>
             <button className="btn-secondary" onClick={reload} disabled={loading}>
               {loading ? <Spinner className="h-4 w-4" /> : <Icon name="refresh" className="h-4 w-4" />}
-              Refresh
+              {t('dash.refresh')}
             </button>
             <SyncButton onDone={reload} />
           </>
@@ -45,7 +47,7 @@ export default function DashboardPage() {
       {error && !data && (
         <div className="mb-6">
           <Alert onRetry={reload}>
-            <p className="font-medium">Could not load the dashboard</p>
+            <p className="font-medium">{t('dash.loadFailed')}</p>
             <p className="mt-0.5">{error}</p>
           </Alert>
         </div>
@@ -62,24 +64,24 @@ export default function DashboardPage() {
       {data && (
         <>
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <StatCard icon="users" label="Present today" value={data.today.present} sub={`of ${data.employees.attendance_enabled} employees`} />
-            <StatCard icon="alert" tone="amber" label="Not punched yet" value={data.today.absent} sub="No punch recorded today" />
-            <StatCard icon="clock" tone="sky" label="Punches today" value={data.today.punches} />
+            <StatCard icon="users" label={t('dash.presentToday')} value={data.today.present} sub={t('dash.ofEmployees', { n: data.employees.attendance_enabled })} />
+            <StatCard icon="alert" tone="amber" label={t('dash.notPunched')} value={data.today.absent} sub={t('dash.notPunchedSub')} />
+            <StatCard icon="clock" tone="sky" label={t('dash.punchesToday')} value={data.today.punches} />
             <StatCard
               icon="device"
               tone={data.devices.online < data.devices.total ? 'red' : 'brand'}
-              label="Devices online"
+              label={t('dash.devicesOnline')}
               value={`${data.devices.online} / ${data.devices.total}`}
-              sub="At last sync"
+              sub={t('dash.atLastSync')}
             />
           </div>
 
           <div className="mt-6 grid gap-6 xl:grid-cols-3">
             <section className="card xl:col-span-2">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                <h2 className="font-semibold text-slate-900">Latest punches</h2>
+                <h2 className="font-semibold text-slate-900">{t('dash.latestPunches')}</h2>
                 <Link href="/transactions" className="text-sm font-medium text-brand-700 hover:underline">
-                  View all
+                  {t('dash.viewAll')}
                 </Link>
               </div>
               {data.today.recent.length ? (
@@ -87,11 +89,11 @@ export default function DashboardPage() {
                   <table className="table">
                     <thead>
                       <tr>
-                        <th>Time</th>
-                        <th>Employee</th>
-                        <th>State</th>
-                        <th>Verified by</th>
-                        <th>Device</th>
+                        <th>{t('dash.col.time')}</th>
+                        <th>{t('dash.col.employee')}</th>
+                        <th>{t('dash.col.state')}</th>
+                        <th>{t('dash.col.verified')}</th>
+                        <th>{t('dash.col.device')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -116,15 +118,15 @@ export default function DashboardPage() {
                   </table>
                 </div>
               ) : (
-                <EmptyState title="No punches yet today" hint={`Punches appear after the next sync (${intervalLabel(data.sync.interval_seconds)}).`} />
+                <EmptyState title={t('dash.noPunches')} hint={`Punches appear after the next sync (${intervalLabel(data.sync.interval_seconds)}).`} />
               )}
             </section>
 
             <section className="card">
               <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-                <h2 className="font-semibold text-slate-900">Devices</h2>
+                <h2 className="font-semibold text-slate-900">{t('dash.devices')}</h2>
                 <Link href="/devices" className="text-sm font-medium text-brand-700 hover:underline">
-                  Live status
+                  {t('dash.liveStatus')}
                 </Link>
               </div>
               {data.devices.list.length ? (
@@ -142,7 +144,7 @@ export default function DashboardPage() {
                   ))}
                 </ul>
               ) : (
-                <EmptyState title="No devices yet" hint="Devices appear after the first sync." />
+                <EmptyState title={t('dash.noDevices')} hint="Devices appear after the first sync." />
               )}
             </section>
           </div>

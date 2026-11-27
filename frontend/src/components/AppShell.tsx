@@ -4,31 +4,46 @@ import {
   Activity,
   BadgeCheck,
   Building2,
-  ChevronsUpDown,
+  Check,
   Clock,
   Cpu,
   FileBarChart,
   KeyRound,
+  Languages,
   LayoutDashboard,
   LogOut,
   MapPin,
+  Palette,
   Radar,
   Send,
   Settings,
   ShieldCheck,
+  UserRound,
   Users,
   type LucideIcon,
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
+import { useTheme } from 'next-themes';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Separator } from '@/components/ui/separator';
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -43,45 +58,47 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { api, ApiError, type FieldErrors } from '@/lib/api';
+import { api } from '@/lib/api';
+import { LANGUAGES, useI18n, type TKey } from '@/lib/i18n';
 import { LiveBadge, RealtimeProvider } from './realtime';
-import { Alert, Field, Modal, Spinner, ToastProvider, useToast } from './ui';
-import { UserContext, type CurrentUser } from './user-context';
+import { THEMES, ThemeToggle } from './theme';
+import { Spinner, ToastProvider } from './ui';
+import { SetUserContext, UserContext, type CurrentUser } from './user-context';
 
-type NavItem = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean };
+type NavItem = { href: string; key: TKey; icon: LucideIcon; adminOnly?: boolean };
 
-const NAV_GROUPS: { label: string; items: NavItem[] }[] = [
+const NAV_GROUPS: { key: TKey; items: NavItem[] }[] = [
   {
-    label: 'Attendance',
+    key: 'nav.group.attendance',
     items: [
-      { href: '/', label: 'Dashboard', icon: LayoutDashboard },
-      { href: '/transactions', label: 'Punch Logs', icon: Clock },
-      { href: '/reports', label: 'Attendance Report', icon: FileBarChart },
+      { href: '/', key: 'nav.dashboard', icon: LayoutDashboard },
+      { href: '/transactions', key: 'nav.transactions', icon: Clock },
+      { href: '/reports', key: 'nav.reports', icon: FileBarChart },
     ],
   },
   {
-    label: 'People',
+    key: 'nav.group.people',
     items: [
-      { href: '/employees', label: 'Employees', icon: Users },
-      { href: '/departments', label: 'Departments', icon: Building2 },
-      { href: '/positions', label: 'Positions', icon: BadgeCheck },
-      { href: '/areas', label: 'Areas', icon: MapPin },
+      { href: '/employees', key: 'nav.employees', icon: Users },
+      { href: '/departments', key: 'nav.departments', icon: Building2 },
+      { href: '/positions', key: 'nav.positions', icon: BadgeCheck },
+      { href: '/areas', key: 'nav.areas', icon: MapPin },
     ],
   },
   {
-    label: 'Devices',
+    key: 'nav.group.devices',
     items: [
-      { href: '/devices', label: 'Devices', icon: Cpu },
-      { href: '/nearby', label: 'Nearby Devices', icon: Radar, adminOnly: true },
+      { href: '/devices', key: 'nav.devices', icon: Cpu },
+      { href: '/nearby', key: 'nav.nearby', icon: Radar, adminOnly: true },
     ],
   },
   {
-    label: 'System',
+    key: 'nav.group.system',
     items: [
-      { href: '/system', label: 'Sync & Activity', icon: Activity },
-      { href: '/webhooks', label: 'Webhooks', icon: Send, adminOnly: true },
-      { href: '/users', label: 'Users', icon: ShieldCheck, adminOnly: true },
-      { href: '/settings', label: 'Settings', icon: Settings, adminOnly: true },
+      { href: '/system', key: 'nav.system', icon: Activity },
+      { href: '/webhooks', key: 'nav.webhooks', icon: Send, adminOnly: true },
+      { href: '/users', key: 'nav.users', icon: ShieldCheck, adminOnly: true },
+      { href: '/settings', key: 'nav.settings', icon: Settings, adminOnly: true },
     ],
   },
 ];
@@ -90,11 +107,20 @@ const SIDEBAR_KEY = 'sidebar-open';
 
 const isActivePath = (pathname: string, href: string) => (href === '/' ? pathname === '/' : pathname.startsWith(href));
 
+export const initialsOf = (name: string) =>
+  name
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((p) => p[0])
+    .join('')
+    .slice(0, 2)
+    .toUpperCase();
+
 export default function AppShell({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { t } = useI18n();
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [passwordOpen, setPasswordOpen] = useState(false);
   // Open/closed is remembered on this computer
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
@@ -126,60 +152,61 @@ export default function AppShell({ children }: { children: ReactNode }) {
   }
 
   const current = NAV_GROUPS.flatMap((g) => g.items).find((i) => isActivePath(pathname, i.href));
+  const title = pathname.startsWith('/profile') ? t('profile.title') : current ? t(current.key) : t('app.name');
 
   return (
     <UserContext.Provider value={user}>
-      <ToastProvider>
-        <RealtimeProvider>
-          <TooltipProvider delayDuration={0}>
-            <SidebarProvider open={sidebarOpen} onOpenChange={changeSidebar}>
-              <AppSidebar user={user} pathname={pathname} onChangePassword={() => setPasswordOpen(true)} onLogout={logout} />
-              <SidebarInset className="min-w-0 bg-slate-50">
-                <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white/90 px-4 backdrop-blur">
-                  <SidebarTrigger className="-ml-1" title="Show / hide the menu (Ctrl+B)" />
-                  <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
-                  <span className="truncate text-sm font-medium text-slate-700">{current?.label ?? 'Attendance'}</span>
-                  <div className="ml-auto">
-                    <LiveBadge />
-                  </div>
-                </header>
-                <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
-              </SidebarInset>
-            </SidebarProvider>
-          </TooltipProvider>
-          <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
-        </RealtimeProvider>
-      </ToastProvider>
+      <SetUserContext.Provider value={setUser}>
+        <ToastProvider>
+          <RealtimeProvider>
+            <TooltipProvider delayDuration={0}>
+              <SidebarProvider open={sidebarOpen} onOpenChange={changeSidebar}>
+                <AppSidebar user={user} pathname={pathname} />
+                <SidebarInset className="min-w-0 bg-slate-50">
+                  {/* Navbar */}
+                  <header className="sticky top-0 z-20 flex h-14 shrink-0 items-center gap-2 border-b border-slate-200 bg-white/90 px-3 backdrop-blur sm:px-4">
+                    <SidebarTrigger className="-ml-1" title={t('nav.toggle')} />
+                    <Separator orientation="vertical" className="mr-1 data-[orientation=vertical]:h-4" />
+                    <span className="truncate text-sm font-medium text-slate-700">{title}</span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <span className="mr-2 hidden sm:inline-flex">
+                        <LiveBadge />
+                      </span>
+                      <LanguageMenu />
+                      <ThemeToggle />
+                      <ProfileMenu user={user} onLogout={logout} />
+                    </div>
+                  </header>
+                  <main className="mx-auto w-full max-w-7xl px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+                </SidebarInset>
+              </SidebarProvider>
+            </TooltipProvider>
+          </RealtimeProvider>
+        </ToastProvider>
+      </SetUserContext.Provider>
     </UserContext.Provider>
   );
 }
 
-function AppSidebar({ user, pathname, onChangePassword, onLogout }: { user: CurrentUser; pathname: string; onChangePassword: () => void; onLogout: () => void }) {
+function AppSidebar({ user, pathname }: { user: CurrentUser; pathname: string }) {
   const { setOpenMobile, isMobile } = useSidebar();
+  const { t } = useI18n();
   // On phones the menu is a drawer: close it after choosing a page
   useEffect(() => {
     if (isMobile) setOpenMobile(false);
   }, [pathname, isMobile, setOpenMobile]);
-
-  const name = user.full_name || user.username;
-  const initials = name
-    .split(/\s+/)
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
 
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton size="lg" asChild tooltip="Dashboard">
+            <SidebarMenuButton size="lg" asChild tooltip={t('nav.dashboard')}>
               <Link href="/">
                 <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">ZK</div>
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate text-sm font-semibold text-slate-900">Attendance</span>
-                  <span className="truncate text-xs text-slate-500">ZKTeco devices</span>
+                  <span className="truncate text-sm font-semibold text-slate-900">{t('app.name')}</span>
+                  <span className="truncate text-xs text-slate-500">{t('app.tagline')}</span>
                 </div>
               </Link>
             </SidebarMenuButton>
@@ -192,16 +219,16 @@ function AppSidebar({ user, pathname, onChangePassword, onLogout }: { user: Curr
           const items = group.items.filter((i) => !i.adminOnly || user.role === 'admin');
           if (!items.length) return null;
           return (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
+            <SidebarGroup key={group.key}>
+              <SidebarGroupLabel>{t(group.key)}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
                   {items.map((item) => (
                     <SidebarMenuItem key={item.href}>
-                      <SidebarMenuButton asChild isActive={isActivePath(pathname, item.href)} tooltip={item.label}>
+                      <SidebarMenuButton asChild isActive={isActivePath(pathname, item.href)} tooltip={t(item.key)}>
                         <Link href={item.href}>
                           <item.icon />
-                          <span>{item.label}</span>
+                          <span>{t(item.key)}</span>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -212,116 +239,111 @@ function AppSidebar({ user, pathname, onChangePassword, onLogout }: { user: Curr
           );
         })}
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <SidebarMenuButton size="lg" className="data-[state=open]:bg-sidebar-accent" tooltip={name}>
-                  <Avatar className="size-8 rounded-lg">
-                    <AvatarFallback className="rounded-lg bg-brand-100 text-xs font-semibold text-brand-700">{initials}</AvatarFallback>
-                  </Avatar>
-                  <div className="grid flex-1 text-left leading-tight">
-                    <span className="truncate text-sm font-medium">{name}</span>
-                    <span className="truncate text-xs capitalize text-slate-500">{user.role}</span>
-                  </div>
-                  <ChevronsUpDown className="ml-auto size-4" />
-                </SidebarMenuButton>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent side={isMobile ? 'bottom' : 'right'} align="end" sideOffset={4} className="min-w-56">
-                <DropdownMenuLabel className="font-normal">
-                  <div className="text-sm font-medium">{name}</div>
-                  <div className="text-xs capitalize text-slate-500">{user.role}</div>
-                </DropdownMenuLabel>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={onChangePassword}>
-                  <KeyRound />
-                  Change password
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={onLogout}>
-                  <LogOut />
-                  Sign out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
       <SidebarRail />
     </Sidebar>
   );
 }
 
-function ChangePasswordModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const toast = useToast();
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [fields, setFields] = useState<FieldErrors>({});
+/** Globe button: English / አማርኛ / Afaan Oromoo. */
+function LanguageMenu() {
+  const { lang, setLang, t } = useI18n();
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="inline-flex h-9 items-center gap-1.5 rounded-md px-2 text-sm text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+          title={t('lang.label')}
+          aria-label={t('lang.label')}
+        >
+          <Languages className="size-[18px]" />
+          <span className="hidden text-xs font-medium uppercase md:inline">{lang}</span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="min-w-44">
+        <DropdownMenuLabel>{t('lang.label')}</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {LANGUAGES.map((l) => (
+          <DropdownMenuItem key={l.code} onSelect={() => setLang(l.code)} lang={l.code}>
+            <span className="flex-1">{l.native}</span>
+            {l.code !== 'en' && <span className="text-xs text-slate-500">{l.label}</span>}
+            {lang === l.code && <Check className="size-4" />}
+          </DropdownMenuItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
 
-  useEffect(() => {
-    if (open) {
-      setCurrent('');
-      setNext('');
-      setConfirm('');
-      setError(null);
-      setFields({});
-    }
-  }, [open]);
-
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    if (next !== confirm) {
-      setFields({ confirm: 'Passwords do not match' });
-      return;
-    }
-    setBusy(true);
-    setError(null);
-    setFields({});
-    try {
-      await api('/auth/change-password', { method: 'POST', body: { current_password: current, new_password: next } });
-      toast('Password changed');
-      onClose();
-    } catch (err) {
-      if (err instanceof ApiError && err.fields) setFields(err.fields);
-      setError(err instanceof Error ? err.message : 'Failed');
-    } finally {
-      setBusy(false);
-    }
-  }
+/** Profile icon in the top-right corner: profile, appearance (theme + language), password, sign out. */
+function ProfileMenu({ user, onLogout }: { user: CurrentUser; onLogout: () => void }) {
+  const router = useRouter();
+  const { t, lang, setLang } = useI18n();
+  const { theme, setTheme } = useTheme();
+  const name = user.full_name || user.username;
 
   return (
-    <Modal
-      open={open}
-      title="Change password"
-      onClose={onClose}
-      footer={
-        <>
-          <button className="btn-secondary" onClick={onClose} disabled={busy}>
-            Cancel
-          </button>
-          <button className="btn-primary" form="pw-form" disabled={busy}>
-            {busy && <Spinner className="h-4 w-4 text-white" />}
-            Save
-          </button>
-        </>
-      }
-    >
-      <form id="pw-form" onSubmit={submit} className="space-y-4">
-        {error && <Alert>{error}</Alert>}
-        <Field label="Current password" error={fields.current_password}>
-          <input className="input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} required />
-        </Field>
-        <Field label="New password" error={fields.new_password} hint="At least 8 characters">
-          <input className="input" type="password" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} required minLength={8} />
-        </Field>
-        <Field label="Confirm new password" error={fields.confirm}>
-          <input className="input" type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} required />
-        </Field>
-      </form>
-    </Modal>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button type="button" className="ml-1 rounded-full outline-none ring-brand-500 focus-visible:ring-2" aria-label={t('menu.profile')} title={name}>
+          <Avatar className="size-8">
+            <AvatarFallback className="bg-brand-600 text-xs font-semibold text-white">{initialsOf(name)}</AvatarFallback>
+          </Avatar>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" sideOffset={6} className="w-60">
+        <DropdownMenuLabel className="flex items-center gap-3 py-2 font-normal">
+          <Avatar className="size-9">
+            <AvatarFallback className="bg-brand-100 text-xs font-semibold text-brand-700">{initialsOf(name)}</AvatarFallback>
+          </Avatar>
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium text-slate-900">{name}</div>
+            <div className="truncate text-xs text-slate-500">
+              @{user.username} · {t(user.role === 'admin' ? 'role.admin' : 'role.viewer')}
+            </div>
+          </div>
+        </DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={() => router.push('/profile')}>
+          <UserRound />
+          {t('menu.profile')}
+        </DropdownMenuItem>
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <Palette />
+            {t('menu.appearance')}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent className="min-w-48">
+            <DropdownMenuLabel className="text-xs text-slate-500">{t('theme.label')}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={theme ?? 'system'} onValueChange={setTheme}>
+              {THEMES.map((th) => (
+                <DropdownMenuRadioItem key={th.value} value={th.value}>
+                  <th.icon className="size-4" />
+                  {t(th.key)}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className="text-xs text-slate-500">{t('lang.label')}</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={lang} onValueChange={(v) => setLang(v as typeof lang)}>
+              {LANGUAGES.map((l) => (
+                <DropdownMenuRadioItem key={l.code} value={l.code} lang={l.code}>
+                  {l.native}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
+        <DropdownMenuItem onSelect={() => router.push('/profile#security')}>
+          <KeyRound />
+          {t('user.changePassword')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onSelect={onLogout} className="text-red-600 focus:text-red-700">
+          <LogOut />
+          {t('user.signOut')}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

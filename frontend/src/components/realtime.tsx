@@ -6,6 +6,7 @@
  */
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { io, type Socket } from 'socket.io-client';
+import { useI18n } from '@/lib/i18n';
 import { useToast } from './ui';
 
 export interface LivePunch {
@@ -38,6 +39,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<Status>('connecting');
   const toastRef = useRef(toast);
   toastRef.current = toast;
+  const { t } = useI18n();
+  const tRef = useRef(t);
+  tRef.current = t;
 
   useEffect(() => {
     const s = io({ path: '/socket.io', withCredentials: true, reconnectionDelayMax: 10_000 });
@@ -52,8 +56,9 @@ export function RealtimeProvider({ children }: { children: ReactNode }) {
         const p = e.punches[0];
         const who = p.employee_name ? `${p.employee_name} (${p.emp_code})` : p.emp_code;
         const where = p.terminal_alias || p.terminal_sn;
-        toastRef.current(`${who} punched${p.punch_state_label ? ` ${p.punch_state_label.toLowerCase()}` : ''} at ${p.punch_time.slice(11, 16)}${where ? ` · ${where}` : ''}`);
-      } else toastRef.current(`${e.count} new punches received`);
+        const msg = tRef.current('toast.punched', { who, state: (p.punch_state_label ?? '').toLowerCase(), time: p.punch_time.slice(11, 16) });
+        toastRef.current(where ? `${msg} · ${where}` : msg);
+      } else toastRef.current(tRef.current('toast.newPunches', { n: e.count }));
     });
 
     setSocket(s);
@@ -135,13 +140,9 @@ export function useLiveRefresh(events: LiveEvent | LiveEvent[], refresh: () => v
 /** "Live" dot for the sidebar. */
 export function LiveBadge() {
   const status = useRealtimeStatus();
-  const label = status === 'live' ? 'Live' : status === 'connecting' ? 'Connecting…' : 'Offline';
-  const tip =
-    status === 'live'
-      ? 'Live: new punches and device activity appear automatically'
-      : status === 'connecting'
-        ? 'Connecting to live updates…'
-        : 'Live updates are not connected. Pages still work; refresh to see new data. Retrying…';
+  const { t } = useI18n();
+  const label = t(status === 'live' ? 'live.live' : status === 'connecting' ? 'live.connecting' : 'live.offline');
+  const tip = t(status === 'live' ? 'live.tip.live' : status === 'connecting' ? 'live.tip.connecting' : 'live.tip.offline');
   return (
     <span className="inline-flex items-center gap-1.5 text-[11px] font-medium text-slate-500" title={tip}>
       <span className="relative flex h-2 w-2">
