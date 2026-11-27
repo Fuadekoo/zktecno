@@ -5,13 +5,15 @@ import { validateBody } from '../middleware/validate.js';
 import { HttpError } from '../utils/http.js';
 import {
   admsSettingsSchema,
+  appearanceSettingsSchema,
   biotimeSettingsSchema,
+  companySettingsSchema,
   syncSettingsSchema,
   zkDeviceSchema,
   zkDeviceTestSchema,
 } from '../validators/schemas.js';
 
-const sectionSchemas = { biotime: biotimeSettingsSchema, adms: admsSettingsSchema, sync: syncSettingsSchema };
+const sectionSchemas = { biotime: biotimeSettingsSchema, adms: admsSettingsSchema, sync: syncSettingsSchema, company: companySettingsSchema, appearance: appearanceSettingsSchema };
 
 /** Validate the body with the schema of the section in the URL. */
 function validateSection(req: Request, res: Response, next: NextFunction) {

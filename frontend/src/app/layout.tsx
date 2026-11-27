@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import { BrandingProvider } from '@/components/branding';
 import { ThemeProvider } from '@/components/theme';
 import { I18nProvider } from '@/lib/i18n';
 
@@ -14,7 +15,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body>
         <ThemeProvider>
-          <I18nProvider>{children}</I18nProvider>
+          <I18nProvider>
+            <BrandingProvider>{children}</BrandingProvider>
+          </I18nProvider>
         </ThemeProvider>
       </body>
     </html>

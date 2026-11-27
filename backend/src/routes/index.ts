@@ -11,6 +11,7 @@ import {
   employeesRoutes,
   positionsRoutes,
 } from './personnel.routes.js';
+import { settingsService } from '../services/settings.service.js';
 import { settingsRoutes } from './settings.routes.js';
 import { systemRoutes } from './system.routes.js';
 import { usersRoutes } from './users.routes.js';
@@ -20,6 +21,7 @@ import { webhooksRoutes } from './webhooks.routes.js';
  * API map (all under /api):
  *   /health                 public liveness check (process is up)
  *   /health/ready           public readiness check (MySQL reachable; 503 if not)
+ *   /branding               public: company name, logo, theme colours
  *   /auth                   login, logout, me, change-password
  *   ---- signed-in users below ----
  *   /dashboard              today's overview            (MySQL)
@@ -37,6 +39,8 @@ export function apiRoutes() {
   return Router()
     .get('/health', healthController.live)
     .get('/health/ready', healthController.ready)
+    // Name, logo and colours for every page, also the login page (no private details)
+    .get('/branding', (_req, res) => res.json(settingsService.branding()))
     .use('/auth', authRoutes)
     .use(requireAuth)
     .use('/dashboard', dashboardRoutes)

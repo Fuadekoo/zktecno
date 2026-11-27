@@ -59,7 +59,7 @@ export const realtime = {
     console.log('[realtime] Live updates on /socket.io');
   },
 
-  emit(event: 'punches' | 'device' | 'employees' | 'sync' | 'commands', payload: object) {
+  emit(event: 'punches' | 'device' | 'employees' | 'sync' | 'commands' | 'branding', payload: object) {
     io?.to('users').emit(event, payload);
   },
 

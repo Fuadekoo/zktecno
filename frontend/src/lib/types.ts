@@ -341,10 +341,37 @@ export interface SyncSettings {
   device_timeout_ms: number;
 }
 
+export interface CompanySettings {
+  name: string;
+  name_am: string;
+  name_om: string;
+  slogan: string;
+  email: string;
+  phone: string;
+  phone2: string;
+  website: string;
+  tin: string;
+  license_no: string;
+  code: string;
+  city: string;
+  subcity: string;
+  address: string;
+  /** data: URL, '' = none */
+  logo: string;
+}
+
+export interface AppearanceSettings {
+  brand_color: string;
+  sidebar_mode: 'light' | 'brand' | 'custom';
+  sidebar_color: string;
+}
+
 export interface AppSettings {
   biotime: BioTimeSettings;
   adms: AdmsSettings;
   sync: SyncSettings;
+  company: CompanySettings;
+  appearance: AppearanceSettings;
 }
 
 export interface NetworkInfo {

@@ -26,6 +26,7 @@ export interface LiveEvents {
   employees: { count: number; source: string };
   sync: { job: string; status: 'success' | 'failed'; created?: number };
   commands: { device_id: number; ids: number[]; status: 'pending' | 'sent' | 'success' | 'failed'; result?: string };
+  branding: object;
 }
 export type LiveEvent = keyof LiveEvents;
 

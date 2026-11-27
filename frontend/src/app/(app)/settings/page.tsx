@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { deviceKey, FoundDeviceDetails, RadarPanel, useDeviceScan, type FoundDevice } from '@/components/device-scan';
 import { Icon } from '@/components/icons';
+import { OrganizationSettings } from '@/components/organization-settings';
 import { useLiveRefresh } from '@/components/realtime';
 import { Alert, ConfirmDialog, Field, Modal, PageHeader, Spinner, TableState, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -11,8 +12,9 @@ import { intervalLabel, timeAgo } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { AppSettings, DeviceMode, DeviceSetting, NetworkInfo, SettingsResponse, ZkDeviceStatus } from '@/lib/types';
 
-type Tab = 'devices' | 'adms' | 'sync' | 'biotime';
-const TABS: { id: Tab; label: string; icon: 'device' | 'wifi' | 'refresh' | 'database' }[] = [
+type Tab = 'organization' | 'devices' | 'adms' | 'sync' | 'biotime';
+const TABS: { id: Tab; label: string; icon: 'device' | 'wifi' | 'refresh' | 'database' | 'building' }[] = [
+  { id: 'organization', label: 'Organization', icon: 'building' },
   { id: 'devices', label: 'Devices', icon: 'device' },
   { id: 'adms', label: 'Push (ADMS)', icon: 'wifi' },
   { id: 'sync', label: 'Sync', icon: 'refresh' },
@@ -56,7 +58,8 @@ export default function SettingsPage() {
       ) : data ? (
         <>
           {tab === 'devices' && <DevicesTab data={data} reload={reload} />}
-          {tab !== 'devices' && (
+          {tab === 'organization' && <OrganizationSettings settings={data.settings} onSaved={(settings) => setData({ ...data, settings })} />}
+          {tab !== 'devices' && tab !== 'organization' && (
             <SectionForm
               key={tab}
               section={tab}
@@ -695,7 +698,7 @@ function PushInstructions({ network }: { network: NetworkInfo }) {
 
 // ---------------------------------------------------------------- Settings sections
 
-type Section = Exclude<Tab, 'devices'>;
+type Section = Exclude<Tab, 'devices' | 'organization'>;
 
 function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string }) {
   return (

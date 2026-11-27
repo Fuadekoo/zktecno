@@ -18,6 +18,7 @@ import { prisma } from '../db/prisma.js';
 import { dbNow } from '../db/time.js';
 import { HttpError } from '../utils/http.js';
 import { zkDevicesRepo } from '../repositories/zkDevices.js';
+import { realtime } from '../realtime.js';
 import { syncService } from './sync.service.js';
 
 export interface BioTimeSettings {
@@ -50,14 +51,46 @@ export interface SyncSettings {
   device_timeout_ms: number;
 }
 
+/** Organization details: shown in the sidebar, login page, browser tab and printouts. */
+export interface CompanySettings {
+  name: string;
+  name_am: string;
+  name_om: string;
+  slogan: string;
+  email: string;
+  phone: string;
+  phone2: string;
+  website: string;
+  tin: string;
+  license_no: string;
+  code: string;
+  city: string;
+  subcity: string;
+  address: string;
+  /** Logo as a data: URL (PNG, JPEG, WebP or SVG), '' = none */
+  logo: string;
+}
+
+/** The colour everyone's dashboard is drawn in. '' = the built-in green. */
+export interface AppearanceSettings {
+  brand_color: string;
+  /** light = white sidebar; brand = deep shade of the brand colour; custom = sidebar_color */
+  sidebar_mode: 'light' | 'brand' | 'custom';
+  sidebar_color: string;
+}
+
 export interface AppSettings {
   biotime: BioTimeSettings;
   adms: AdmsSettings;
   sync: SyncSettings;
+  company: CompanySettings;
+  appearance: AppearanceSettings;
 }
 
 export type SettingsSection = keyof AppSettings;
-export const SECTIONS: SettingsSection[] = ['biotime', 'adms', 'sync'];
+export const SECTIONS: SettingsSection[] = ['biotime', 'adms', 'sync', 'company', 'appearance'];
+/** Sections that come from .env on the first start (the others start empty). */
+const ENV_SECTIONS: SettingsSection[] = ['biotime', 'adms', 'sync'];
 
 /** The values .env produced at startup: used once to fill an empty database, and as defaults. */
 const fromEnv: AppSettings = {
@@ -85,6 +118,24 @@ const fromEnv: AppSettings = {
     lookback_hours: config.sync.lookbackHours,
     device_timeout_ms: config.zk.timeoutMs,
   },
+  company: {
+    name: '',
+    name_am: '',
+    name_om: '',
+    slogan: '',
+    email: '',
+    phone: '',
+    phone2: '',
+    website: '',
+    tin: '',
+    license_no: '',
+    code: '',
+    city: '',
+    subcity: '',
+    address: '',
+    logo: '',
+  },
+  appearance: { brand_color: '', sidebar_mode: 'light', sidebar_color: '' },
 };
 const envDevices = [...config.zk.devices];
 const envSerials = config.adms.allowedSn.filter((s) => s !== '*');
@@ -144,7 +195,7 @@ async function seedIfEmpty() {
     }
     await save('devices_seeded' as SettingsSection, { at: new Date().toISOString() });
   }
-  if (missing.length) console.log(`[settings] First start: copied ${missing.join(', ')} settings and devices from .env into the database. From now on, change them on the Settings page.`);
+  if (missing.some((s) => ENV_SECTIONS.includes(s))) console.log(`[settings] First start: copied ${missing.join(', ')} settings and devices from .env into the database. From now on, change them on the Settings page.`);
 }
 
 export const settingsService = {
@@ -179,7 +230,13 @@ export const settingsService = {
   /** Settings for the page. The BioTime password is never sent back, only whether one is set. */
   get() {
     const { password, ...bt } = current.biotime;
-    return { biotime: { ...bt, password: '', password_set: Boolean(password) }, adms: current.adms, sync: current.sync };
+    return { biotime: { ...bt, password: '', password_set: Boolean(password) }, adms: current.adms, sync: current.sync, company: current.company, appearance: current.appearance };
+  },
+
+  /** What every page needs to look right, also before sign-in: name, logo, colours. No private details. */
+  branding() {
+    const c = current.company;
+    return { company: { name: c.name, name_am: c.name_am, name_om: c.name_om, slogan: c.slogan, logo: c.logo }, appearance: current.appearance };
   },
 
   /** The full BioTime settings with `patch` applied (for "Test connection" before saving). */
@@ -212,6 +269,8 @@ export const settingsService = {
       const n = next as AdmsSettings;
       if (a.enabled !== n.enabled || a.port !== n.port) await adms.restart();
     }
+    // Name, logo or colours changed: every open dashboard updates right away
+    if (section === 'company' || section === 'appearance') realtime.emit('branding', this.branding());
     // New intervals, or BioTime turned on/off: restart the timer (runs one cycle now)
     if (section === 'sync' || (section === 'biotime' && changed.includes('enabled'))) syncService.restart();
     return changed.filter((k) => k !== 'password').concat(changed.includes('password') ? ['password (changed)'] : []);

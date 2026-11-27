@@ -10,7 +10,7 @@ import { HttpError, parseId } from '../utils/http.js';
 import { zk } from '../zk/client.js';
 import { scanNetwork } from '../zk/scan.js';
 
-const SECTION_LABEL: Record<SettingsSection, string> = { biotime: 'BioTime', adms: 'ADMS push', sync: 'Sync' };
+const SECTION_LABEL: Record<SettingsSection, string> = { biotime: 'BioTime', adms: 'ADMS push', sync: 'Sync', company: 'Company info', appearance: 'Theme colour' };
 
 /** A second device with the same serial number is the usual unique-key clash: say so next to the field. */
 function serialClash(err: unknown): never {

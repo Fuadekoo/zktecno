@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState, type FormEvent } from 'react';
+import { BrandMark, useBranding } from '@/components/branding';
 import { Alert, Spinner } from '@/components/ui';
 import { api } from '@/lib/api';
 
@@ -27,13 +28,15 @@ function LoginForm() {
     }
   }
 
+  const { branding, displayName } = useBranding();
+
   return (
     <form onSubmit={submit} className="card w-full max-w-sm space-y-4 p-6">
       <div className="mb-2 flex items-center gap-3">
-        <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-600 font-bold text-white">ZK</div>
-        <div>
-          <h1 className="text-lg font-semibold text-slate-900">Attendance</h1>
-          <p className="text-sm text-slate-500">Sign in to continue</p>
+        <BrandMark className="size-10 text-base" />
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-semibold text-slate-900">{displayName || 'Attendance'}</h1>
+          <p className="truncate text-sm text-slate-500">{branding.company.slogan || 'Sign in to continue'}</p>
         </div>
       </div>
       {error && <Alert>{error}</Alert>}

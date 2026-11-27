@@ -205,6 +205,41 @@ export const syncSettingsSchema = z
   })
   .partial();
 
+/** Logo as a data: URL. ~500 KB file at most (base64 is 4/3 larger). */
+const logoDataUrl = z
+  .string()
+  .max(700_000, 'The logo is too large. Use an image under 500 KB.')
+  .regex(/^(data:image\/(png|jpeg|webp|svg\+xml);base64,[A-Za-z0-9+/=]+)?$/, 'The logo must be a PNG, JPEG, WebP or SVG image');
+
+export const companySettingsSchema = z
+  .object({
+    name: trimmed(120),
+    name_am: trimmed(120),
+    name_om: trimmed(120),
+    slogan: trimmed(160),
+    email: z.union([z.string().trim().email('Invalid email').max(120), z.literal('')]),
+    phone: trimmed(30),
+    phone2: trimmed(30),
+    website: z.union([z.string().trim().url('Enter a full address, e.g. https://example.com').max(200), z.literal('')]),
+    tin: trimmed(30),
+    license_no: trimmed(60),
+    code: trimmed(30),
+    city: trimmed(80),
+    subcity: trimmed(80),
+    address: trimmed(200),
+    logo: logoDataUrl,
+  })
+  .partial();
+
+const hexColor = z.union([z.string().trim().regex(/^#[0-9a-fA-F]{6}$/, 'Use a colour like #1b2a4a'), z.literal('')]);
+export const appearanceSettingsSchema = z
+  .object({
+    brand_color: hexColor,
+    sidebar_mode: z.enum(['light', 'brand', 'custom']),
+    sidebar_color: hexColor,
+  })
+  .partial();
+
 const deviceFields = z.object({
   name: trimmed(100).min(1, 'Give the device a name'),
   mode: z.enum(['pull', 'push', 'both']),

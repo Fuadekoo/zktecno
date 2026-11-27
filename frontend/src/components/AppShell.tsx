@@ -60,7 +60,8 @@ import {
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { LANGUAGES, useI18n, type TKey } from '@/lib/i18n';
-import { LiveBadge, RealtimeProvider } from './realtime';
+import { BrandMark, useBranding, type Branding } from './branding';
+import { LiveBadge, RealtimeProvider, useLive } from './realtime';
 import { THEMES, ThemeToggle } from './theme';
 import { Spinner, ToastProvider } from './ui';
 import { SetUserContext, UserContext, type CurrentUser } from './user-context';
@@ -191,6 +192,9 @@ export default function AppShell({ children }: { children: ReactNode }) {
 function AppSidebar({ user, pathname }: { user: CurrentUser; pathname: string }) {
   const { setOpenMobile, isMobile } = useSidebar();
   const { t } = useI18n();
+  const { displayName, setBranding } = useBranding();
+  // An admin changed the name, logo or colours: apply them here right away
+  useLive('branding', (b) => setBranding(b as Branding));
   // On phones the menu is a drawer: close it after choosing a page
   useEffect(() => {
     if (isMobile) setOpenMobile(false);
@@ -203,10 +207,10 @@ function AppSidebar({ user, pathname }: { user: CurrentUser; pathname: string })
           <SidebarMenuItem>
             <SidebarMenuButton size="lg" asChild tooltip={t('nav.dashboard')}>
               <Link href="/">
-                <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">ZK</div>
+                <BrandMark className="aspect-square size-8 text-sm" />
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate text-sm font-semibold text-slate-900">{t('app.name')}</span>
-                  <span className="truncate text-xs text-slate-500">{t('app.tagline')}</span>
+                  <span className="truncate text-sm font-semibold">{displayName || t('app.name')}</span>
+                  <span className="truncate text-xs opacity-70">{displayName ? t('app.name') : t('app.tagline')}</span>
                 </div>
               </Link>
             </SidebarMenuButton>
