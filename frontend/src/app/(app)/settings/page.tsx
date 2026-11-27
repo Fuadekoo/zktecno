@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { deviceKey, FoundDeviceDetails, RadarPanel, useDeviceScan, type FoundDevice } from '@/components/device-scan';
 import { Icon } from '@/components/icons';
+import { useLiveRefresh } from '@/components/realtime';
 import { Alert, ConfirmDialog, Field, Modal, PageHeader, Spinner, TableState, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
 import { api, ApiError, type FieldErrors } from '@/lib/api';
@@ -20,7 +21,9 @@ const TABS: { id: Tab; label: string; icon: 'device' | 'wifi' | 'refresh' | 'dat
 
 export default function SettingsPage() {
   const { isAdmin } = useUser();
-  const { data, error, loading, reload, setData } = useApi<SettingsResponse>(isAdmin ? '/settings' : null);
+  const { data, error, loading, reload, refresh, setData } = useApi<SettingsResponse>(isAdmin ? '/settings' : null);
+  // Devices pushing: "Last push" and the "not in your list" notices update live
+  useLiveRefresh('device', refresh, 1500);
   const [tab, setTab] = useState<Tab>('devices');
 
   if (!isAdmin) return <Alert>Only administrators can change settings.</Alert>;

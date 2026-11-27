@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { Icon } from '@/components/icons';
+import { useLiveRefresh } from '@/components/realtime';
 import { SyncButton } from '@/components/SyncButton';
 import { Alert, PageHeader, Pagination, Spinner, StatCard, TableState, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -25,6 +26,8 @@ export default function SystemPage() {
   const [runsPage, setRunsPage] = useState(1);
   const [runsJob, setRunsJob] = useState('');
   const runs = useApi<Paginated<SyncRunRow>>('/system/sync-runs', { page: runsPage, page_size: RUNS_PAGE, job: runsJob });
+  useLiveRefresh(['sync', 'punches', 'device'], status.refresh, 1500);
+  useLiveRefresh('sync', runs.refresh);
 
   const [busyJob, setBusyJob] = useState<string | null>(null);
   const [rangeStart, setRangeStart] = useState(daysAgoISO(6));

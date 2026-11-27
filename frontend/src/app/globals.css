@@ -64,3 +64,11 @@
     @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
   }
 }
+
+/* A row that just arrived live (new punch): brief green glow that fades out */
+@keyframes live-new {
+  0% { background-color: rgb(220 252 231); }
+  100% { background-color: transparent; }
+}
+.live-new > td { animation: live-new 6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .live-new > td { animation: none; background-color: rgb(240 253 244); } }

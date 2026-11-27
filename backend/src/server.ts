@@ -1,6 +1,7 @@
 import os from 'node:os';
 import { adms } from './adms/server.js';
 import { createApp } from './app.js';
+import { realtime } from './realtime.js';
 import { biotime } from './biotime/client.js';
 import { config, warnAboutUnsafeConfig } from './config.js';
 import { runMigrations } from './db/migrate.js';
@@ -47,6 +48,8 @@ async function main() {
     }
     if (config.biotime.enabled) console.log(`[server] BioTime: ${config.biotime.baseUrl} (auth: ${config.biotime.authType}, user: ${config.biotime.username})`);
   });
+  // Live updates for the dashboard (Socket.IO on the same port)
+  realtime.attach(server);
   server.on('error', (err: NodeJS.ErrnoException) => {
     console.error(err.code === 'EADDRINUSE' ? `[server] Port ${config.port} is already in use. Stop the other process or change PORT.` : err);
     process.exit(1);
@@ -68,6 +71,7 @@ async function main() {
     webhookService.stop();
     deviceCommands.stop();
     void adms.stop();
+    realtime.close();
     server.close(() => {
       void disconnectDatabase().finally(() => process.exit(0));
     });

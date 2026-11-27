@@ -11,27 +11,36 @@ export function useApi<T>(path: string | null, query?: Record<string, string | n
   const key = path ? `${path}?${JSON.stringify(query ?? {})}` : null;
   const requestId = useRef(0);
 
-  const load = useCallback(async () => {
+  /** `silent`: keep showing the current data while fetching (live updates), no spinner, keep it on error. */
+  const fetchData = useCallback(async (silent: boolean) => {
     if (!path) return;
     const id = ++requestId.current;
-    setLoading(true);
-    setError(null);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     try {
       const result = await api<T>(path, { query });
-      if (id === requestId.current) setData(result);
+      if (id === requestId.current) {
+        setData(result);
+        if (silent) setError(null);
+      }
     } catch (err) {
-      if (id === requestId.current) setError(err instanceof Error ? err.message : 'Something went wrong');
+      if (id === requestId.current && !silent) setError(err instanceof Error ? err.message : 'Something went wrong');
     } finally {
-      if (id === requestId.current) setLoading(false);
+      if (id === requestId.current && !silent) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  const load = useCallback(() => fetchData(false), [fetchData]);
+  const refresh = useCallback(() => fetchData(true), [fetchData]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  return { data, error, loading, reload: load, setData };
+  return { data, error, loading, reload: load, refresh, setData };
 }
 
 /** Value that only updates after the user stops typing. */

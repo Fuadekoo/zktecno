@@ -6,6 +6,7 @@ import type { Punch } from '../repositories/punches.js';
 import { runToJson } from '../repositories/syncRuns.js';
 import { webhooksRepo, type WebhookEvent } from '../repositories/webhooks.js';
 import { punchesRepo } from '../repositories/punches.js';
+import { realtime } from '../realtime.js';
 import { localDate } from '../utils/http.js';
 
 /** Punches per request: large syncs are split so no single POST is huge. */
@@ -62,6 +63,8 @@ class WebhookService {
    */
   async queuePunches(punches: Punch[], syncRunId: number | null, onlyWebhookId?: number) {
     if (!punches.length) return 0;
+    // Dashboard live update (not for a manual resend to one webhook)
+    if (onlyWebhookId === undefined) realtime.emit('punches', { count: punches.length, live: syncRunId === null, punches: punches.slice(-20).map(punchPayload) });
     const hooks = (await webhooksRepo.subscribedTo('punch.created')).filter((h) => onlyWebhookId === undefined || h.id === onlyWebhookId);
     if (!hooks.length) return 0;
     const rows: { webhookId: number; event: string; payload: Prisma.InputJsonValue; syncRunId: number | null }[] = [];

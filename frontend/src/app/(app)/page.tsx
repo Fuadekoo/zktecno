@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect } from 'react';
 import { DeviceStatus, PunchBadge } from '@/components/badges';
 import { Icon } from '@/components/icons';
+import { useLiveRefresh } from '@/components/realtime';
 import { SyncButton } from '@/components/SyncButton';
 import { Alert, EmptyState, PageHeader, Spinner, StatCard } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -11,17 +12,18 @@ import { intervalLabel, shortDateTime, timeAgo } from '@/lib/format';
 import { useApi } from '@/lib/hooks';
 import type { Dashboard } from '@/lib/types';
 
-// The page re-reads MySQL every minute; MySQL itself is refreshed from BioTime by the sync job.
+// New punches, device activity and finished syncs update the page live; this is only a safety net.
 const REFRESH_MS = 60_000;
 
 export default function DashboardPage() {
   const { isAdmin } = useUser();
-  const { data, error, loading, reload } = useApi<Dashboard>('/dashboard');
+  const { data, error, loading, reload, refresh } = useApi<Dashboard>('/dashboard');
+  useLiveRefresh(['punches', 'device', 'sync'], refresh);
 
   useEffect(() => {
-    const t = setInterval(reload, REFRESH_MS);
+    const t = setInterval(refresh, REFRESH_MS);
     return () => clearInterval(t);
-  }, [reload]);
+  }, [refresh]);
 
   return (
     <>

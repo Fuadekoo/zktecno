@@ -8,6 +8,7 @@ import { useUser } from '@/components/user-context';
 import { api, ApiError, type FieldErrors, type Paginated } from '@/lib/api';
 import { fullName, initials } from '@/lib/format';
 import { useApi, useDebounced } from '@/lib/hooks';
+import { useLiveRefresh } from '@/components/realtime';
 import type { Employee, OrgUnit, SystemStatus } from '@/lib/types';
 
 const PAGE_SIZE = 20;
@@ -65,13 +66,14 @@ export default function EmployeesPage() {
   const dCode = useDebounced(code.trim());
   const dName = useDebounced(name.trim());
 
-  const { data, error, loading, reload } = useApi<Paginated<Employee>>('/employees', {
+  const { data, error, loading, reload, refresh } = useApi<Paginated<Employee>>('/employees', {
     emp_code: dCode,
     first_name: dName,
     department,
     page,
     page_size: PAGE_SIZE,
   });
+  useLiveRefresh(['employees', 'sync'], refresh, 1500);
   const departments = useApi<{ data: OrgUnit[] }>('/departments/all');
   const positions = useApi<{ data: OrgUnit[] }>('/positions/all');
   const areas = useApi<{ data: OrgUnit[] }>('/areas/all');

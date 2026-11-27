@@ -26,26 +26,32 @@ export function cookieOptions(): CookieOptions {
   };
 }
 
-/**
- * Accepts the session cookie (browser) or "Authorization: Bearer <token>" (scripts).
- * The user is re-read from the database so a deactivated or deleted account loses access immediately.
- */
-export async function requireAuth(req: Request, res: Response, next: NextFunction) {
-  const header = req.headers.authorization ?? '';
-  const bearer = header.startsWith('Bearer ') ? header.slice(7) : undefined;
-  const token: string | undefined = req.cookies?.[config.app.cookieName] ?? bearer;
-  if (!token) return res.status(401).json({ error: 'Not signed in' });
+type SessionCheck = { ok: true; user: { id: number; username: string; role: Role } } | { ok: false; error: string };
 
+/**
+ * Check a session token. The user is re-read from the database so a deactivated or deleted account
+ * loses access immediately. Also used by the live (Socket.IO) connection.
+ */
+export async function verifySession(token: string | undefined): Promise<SessionCheck> {
+  if (!token) return { ok: false, error: 'Not signed in' };
   let payload: SessionPayload;
   try {
     payload = jwt.verify(token, config.app.jwtSecret) as SessionPayload;
   } catch {
-    return res.status(401).json({ error: 'Session expired. Please sign in again.' });
+    return { ok: false, error: 'Session expired. Please sign in again.' };
   }
-
   const user = await usersRepo.findById(Number(payload.sub));
-  if (!user || !user.isActive) return res.status(401).json({ error: 'Account is disabled or no longer exists' });
-  req.user = { id: user.id, username: user.username, role: user.role };
+  if (!user || !user.isActive) return { ok: false, error: 'Account is disabled or no longer exists' };
+  return { ok: true, user: { id: user.id, username: user.username, role: user.role } };
+}
+
+/** Accepts the session cookie (browser) or "Authorization: Bearer <token>" (scripts). */
+export async function requireAuth(req: Request, res: Response, next: NextFunction) {
+  const header = req.headers.authorization ?? '';
+  const bearer = header.startsWith('Bearer ') ? header.slice(7) : undefined;
+  const check = await verifySession(req.cookies?.[config.app.cookieName] ?? bearer);
+  if (!check.ok) return res.status(401).json({ error: check.error });
+  req.user = check.user;
   next();
 }
 

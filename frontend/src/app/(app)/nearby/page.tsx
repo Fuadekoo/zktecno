@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useEffect, useState, type FormEvent } from 'react';
 import { deviceKey, FoundDeviceDetails, isReachable, RadarPanel, useDeviceScan, type DeviceScan, type FoundDevice } from '@/components/device-scan';
 import { Icon } from '@/components/icons';
+import { useLiveRefresh } from '@/components/realtime';
 import { Alert, PageHeader, Spinner, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
 import { api, ApiError } from '@/lib/api';
@@ -29,6 +30,7 @@ function suggestedMode(d: FoundDevice): DeviceMode {
 export default function NearbyDevicesPage() {
   const { isAdmin } = useUser();
   const settings = useApi<SettingsResponse>(isAdmin ? '/settings' : null);
+  useLiveRefresh(['device', 'punches'], settings.refresh, 1500);
   const scan = useDeviceScan();
   const [selected, setSelected] = useState<string | null>(null);
   const [extra, setExtra] = useState<FoundDevice[]>([]);

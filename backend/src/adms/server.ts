@@ -29,6 +29,7 @@ import { syncService } from '../services/sync.service.js';
 import { webhookService } from '../services/webhook.service.js';
 import type { ZkPunch } from '../zk/client.js';
 import { localDateTime } from '../utils/http.js';
+import { emitDeviceSeen, realtime } from '../realtime.js';
 import { admsDevices as devices, parseInfo, type AdmsDeviceState } from './state.js';
 
 export type { AdmsDeviceState };
@@ -146,6 +147,7 @@ function track(sn: string, req: Request): AdmsDeviceState {
     console.log(`[adms] Device ${sn} connected from ${req.ip}`);
   }
   d.ip = req.ip ?? null;
+  emitDeviceSeen(sn, d.ip, now);
   d.last_seen = now;
   d.last_seen_ms = Date.now();
   const info = typeof req.query.INFO === 'string' ? parseInfo(req.query.INFO) : null;
@@ -171,6 +173,7 @@ async function saveOperlog(state: AdmsDeviceState, content: OperlogContent, stam
     const byCode = new Map(content.users.map((u) => [u.emp_code, u]));
     await employeesRepo.upsertFromDevice([...byCode.values()], dbNow());
     state.users_received += byCode.size;
+    realtime.emit('employees', { count: byCode.size, source: state.sn });
   }
   let changed = 0;
   let copies = 0;

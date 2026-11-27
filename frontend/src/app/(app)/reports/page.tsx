@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { Icon } from '@/components/icons';
+import { useLiveRefresh } from '@/components/realtime';
 import { PageHeader, Spinner, StatCard, TableState, useToast } from '@/components/ui';
 import { download } from '@/lib/api';
 import { daysAgoISO, minutesToHours, todayISO } from '@/lib/format';
@@ -26,7 +27,8 @@ export default function ReportsPage() {
   const debouncedEmp = useDebounced(empCode.trim());
 
   const query = { start_date: start, end_date: end, department, emp_code: debouncedEmp, include_absent: includeAbsent };
-  const { data, error, loading, reload } = useApi<DailyReport>(start && end ? '/reports/daily' : null, query);
+  const { data, error, loading, reload, refresh } = useApi<DailyReport>(start && end ? '/reports/daily' : null, query);
+  useLiveRefresh(['punches', 'employees'], refresh, 1500);
   const departments = useApi<{ data: OrgUnit[] }>('/departments/all');
 
   const rows = useMemo(() => (data?.data ?? []).filter((r) => !statusFilter || r.status === statusFilter), [data, statusFilter]);

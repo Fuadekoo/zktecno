@@ -5,6 +5,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react';
 import { api, ApiError, type FieldErrors } from '@/lib/api';
 import { Icon, type IconName } from './icons';
+import { LiveBadge, RealtimeProvider } from './realtime';
 import { Alert, Field, Modal, Spinner, ToastProvider, useToast } from './ui';
 import { UserContext, type CurrentUser } from './user-context';
 
@@ -60,6 +61,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
   return (
     <UserContext.Provider value={user}>
       <ToastProvider>
+        <RealtimeProvider>
         <div className="min-h-screen lg:pl-64">
           <aside
             className={`fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-slate-200 bg-white transition-transform lg:translate-x-0 ${menuOpen ? 'translate-x-0' : '-translate-x-full'}`}
@@ -68,7 +70,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">ZK</div>
               <div>
                 <p className="text-sm font-semibold leading-tight text-slate-900">Attendance</p>
-                <p className="text-xs leading-tight text-slate-500">BioTime 8.5</p>
+                <LiveBadge />
               </div>
             </div>
             <nav className="flex-1 space-y-0.5 overflow-y-auto p-3">
@@ -109,6 +111,7 @@ export default function AppShell({ children }: { children: ReactNode }) {
           <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
         </div>
         <ChangePasswordModal open={passwordOpen} onClose={() => setPasswordOpen(false)} />
+        </RealtimeProvider>
       </ToastProvider>
     </UserContext.Provider>
   );

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { PunchBadge } from '@/components/badges';
 import { Icon } from '@/components/icons';
+import { useLive, useLiveRefresh } from '@/components/realtime';
 import { PageHeader, Pagination, Spinner, TableState, useToast } from '@/components/ui';
 import { download, type Paginated } from '@/lib/api';
 import { daysAgoISO, todayISO } from '@/lib/format';
@@ -23,7 +24,16 @@ export default function TransactionsPage() {
   const debouncedEmp = useDebounced(empCode.trim());
 
   const filters = { search: debouncedEmp, department, terminal_sn: terminal, start_time: start, end_time: end };
-  const { data, error, loading, reload } = useApi<Paginated<Transaction>>('/transactions', { ...filters, page, page_size: PAGE_SIZE });
+  const { data, error, loading, reload, refresh } = useApi<Paginated<Transaction>>('/transactions', { ...filters, page, page_size: PAGE_SIZE });
+  useLiveRefresh('punches', refresh);
+  // Highlight punches that just arrived
+  const [fresh, setFresh] = useState<Set<number>>(new Set());
+  useLive('punches', (e) => {
+    if (!e.live) return;
+    const ids = e.punches.map((p) => p.id);
+    setFresh((s) => new Set([...s, ...ids]));
+    setTimeout(() => setFresh((s) => new Set([...s].filter((id) => !ids.includes(id)))), 6000);
+  });
   const devices = useApi<{ data: Device[] }>('/devices/all');
   const departments = useApi<{ data: OrgUnit[] }>('/departments/all');
 
@@ -142,7 +152,7 @@ export default function TransactionsPage() {
             </thead>
             <tbody>
               {data?.data.map((t) => (
-                <tr key={t.id}>
+                <tr key={t.id} className={fresh.has(t.id) ? 'live-new' : undefined}>
                   <td className="tabular-nums">{t.punch_time}</td>
                   <td>
                     <div className="font-medium text-slate-900">{t.employee_name || '—'}</div>

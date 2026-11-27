@@ -37,6 +37,9 @@ const nextConfig: NextConfig = {
         { source: '/api/:path*', destination: `${backend}/api/:path*` },
         // Attendance devices pushing here (ADMS "Cloud Server Setting" = this address and port)
         { source: '/iclock/:path*', destination: `${backend}/iclock/:path*` },
+        // Live updates (Socket.IO). Next.js first redirects "/socket.io/" to "/socket.io", so match that and
+        // put the slash back. Through Next.js it runs over HTTP long-polling; behind nginx it uses WebSockets.
+        { source: '/socket.io', destination: `${backend}/socket.io/` },
       ];
     },
   }),

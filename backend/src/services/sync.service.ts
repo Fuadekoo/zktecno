@@ -10,6 +10,7 @@ import { syncRunsRepo, type SyncJob, type SyncTrigger } from '../repositories/sy
 import { webhooksRepo } from '../repositories/webhooks.js';
 import { localDate, localDateTime } from '../utils/http.js';
 import { zk, type ZkUser } from '../zk/client.js';
+import { realtime } from '../realtime.js';
 import { webhookService } from './webhook.service.js';
 
 const HOUR = 3_600_000;
@@ -140,6 +141,7 @@ class SyncService {
         const outcome = await fn(runId);
         const { newPunchIds, ...stats } = outcome;
         const finished = await syncRunsRepo.finish(runId, started, stats);
+        realtime.emit('sync', { job, status: 'success', created: stats.created });
 
         let queued = 0;
         if (PUNCH_JOBS.includes(job)) {
@@ -153,6 +155,7 @@ class SyncService {
         let queued = 0;
         if (runId !== null) {
           const failed = await syncRunsRepo.fail(runId, started, message).catch(() => null);
+          realtime.emit('sync', { job, status: 'failed' });
           if (failed && PUNCH_JOBS.includes(job)) {
             queued = await webhookService.queueSyncResult(failed).catch(() => 0);
             if (queued) await syncRunsRepo.setWebhooksQueued(runId, queued).catch(() => {});

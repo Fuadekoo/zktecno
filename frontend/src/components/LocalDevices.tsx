@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { CommandLog, usePoll } from '@/components/device-control';
+import { useLiveRefresh } from '@/components/realtime';
 import { Icon } from '@/components/icons';
 import { Alert, ConfirmDialog, Field, Modal, PageHeader, Spinner, TableState, useToast } from '@/components/ui';
 import { useUser } from '@/components/user-context';
@@ -45,7 +46,7 @@ function ActionButton({ label, cap, hint, onClick, disabled }: { label: string; 
 export default function LocalDevices() {
   const toast = useToast();
   const { isAdmin } = useUser();
-  const { data, error, loading, reload } = useApi<{ adms: { enabled: boolean; forwarding: boolean; port: number }; data: ControlDevice[] }>('/device-control/devices');
+  const { data, error, loading, reload, refresh } = useApi<{ adms: { enabled: boolean; forwarding: boolean; port: number }; data: ControlDevice[] }>('/device-control/devices');
   const [logDevice, setLogDevice] = useState<number | ''>('');
   const [logKey, setLogKey] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
@@ -53,7 +54,9 @@ export default function LocalDevices() {
   const [range, setRange] = useState({ start: daysAgoISO(7), end: todayISO() });
   const [rangeErrors, setRangeErrors] = useState<Record<string, string>>({});
   const [confirm, setConfirm] = useState<{ d: ControlDevice; action: 'reboot' | 'send_all_employees' } | null>(null);
-  usePoll(reload, true, 10_000);
+  // Live: a device pushing or new punches update the list; the poll is only a safety net
+  useLiveRefresh(['device', 'punches', 'employees'], refresh, 1500);
+  usePoll(refresh, true, 30_000);
 
   async function run(d: ControlDevice, action: Action, extra: Record<string, string> = {}) {
     setBusy(`${d.id}:${action}`);
