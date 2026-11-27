@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { healthController } from '../controllers/health.controller.js';
 import { requireAuth } from '../middleware/auth.js';
 import { dashboardRoutes, reportsRoutes, transactionsRoutes } from './attendance.routes.js';
 import { authRoutes } from './auth.routes.js';
@@ -17,7 +18,8 @@ import { webhooksRoutes } from './webhooks.routes.js';
 
 /**
  * API map (all under /api):
- *   /health                 public liveness check
+ *   /health                 public liveness check (process is up)
+ *   /health/ready           public readiness check (MySQL reachable; 503 if not)
  *   /auth                   login, logout, me, change-password
  *   ---- signed-in users below ----
  *   /dashboard              today's overview            (MySQL)
@@ -33,7 +35,8 @@ import { webhooksRoutes } from './webhooks.routes.js';
  */
 export function apiRoutes() {
   return Router()
-    .get('/health', (_req, res) => res.json({ ok: true, time: new Date().toISOString() }))
+    .get('/health', healthController.live)
+    .get('/health/ready', healthController.ready)
     .use('/auth', authRoutes)
     .use(requireAuth)
     .use('/dashboard', dashboardRoutes)
