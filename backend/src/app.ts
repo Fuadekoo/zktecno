@@ -22,7 +22,11 @@ export function createApp() {
   // security headers: devices send plain text and expect bare replies.
   const admsApp = createAdmsApp();
   admsApp.set('trust proxy', 1);
-  app.use((req, res, next) => (config.adms.enabled && req.path.startsWith('/iclock/') ? admsApp(req, res, next) : next()));
+  app.use((req, res, next) => {
+    if (!req.path.startsWith('/iclock/')) return next();
+    if (config.adms.enabled) return admsApp(req, res, next);
+    res.status(503).type('text/plain').send('Device push (ADMS) is turned off on this server. Turn it on in Settings > Push (ADMS).');
+  });
 
   // The exported dashboard uses inline scripts, which the default Content-Security-Policy blocks
   app.use(helmet(staticDir ? { contentSecurityPolicy: false } : undefined));
