@@ -5,6 +5,7 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import morgan from 'morgan';
+import { createAdmsApp } from './adms/server.js';
 import { config } from './config.js';
 import { errorHandler, notFound } from './middleware/errorHandler.js';
 import { apiRoutes } from './routes/index.js';
@@ -15,6 +16,14 @@ export function createApp() {
 
   app.disable('x-powered-by');
   app.set('trust proxy', 1);
+
+  // Device pushes (ADMS /iclock/...) are also accepted on this port, so a device can use the same address
+  // and port as the dashboard (the frontend forwards /iclock like /api). First, before the JSON parser and
+  // security headers: devices send plain text and expect bare replies.
+  const admsApp = createAdmsApp();
+  admsApp.set('trust proxy', 1);
+  app.use((req, res, next) => (config.adms.enabled && req.path.startsWith('/iclock/') ? admsApp(req, res, next) : next()));
+
   // The exported dashboard uses inline scripts, which the default Content-Security-Policy blocks
   app.use(helmet(staticDir ? { contentSecurityPolicy: false } : undefined));
   app.use(cors({ origin: config.corsOrigin, credentials: true }));

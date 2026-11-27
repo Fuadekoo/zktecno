@@ -33,7 +33,11 @@ const nextConfig: NextConfig = {
   // Same origin means the httpOnly session cookie just works, and there are no CORS issues.
   ...(!desktop && {
     async rewrites() {
-      return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
+      return [
+        { source: '/api/:path*', destination: `${backend}/api/:path*` },
+        // Attendance devices pushing here (ADMS "Cloud Server Setting" = this address and port)
+        { source: '/iclock/:path*', destination: `${backend}/iclock/:path*` },
+      ];
     },
   }),
 };
